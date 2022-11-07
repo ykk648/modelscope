@@ -65,6 +65,18 @@ class Body2DKeypointsPipeline(Pipeline):
             return [None, None]
         human_images, metas = self.keypoint_model.preprocess(
             [bboxes, input_image])
+        
+        import torch
+        input_names = ["input_1"]
+        output_names = ["output_1"]
+        opset_version = 13
+        dynamic_axes = None
+        # dynamic_axes = {'actual_input_1': [0, 2, 3], 'output1': [0, 1]}
+        torch.onnx.export(self.keypoint_model.key_points_model, human_images[0].reshape(1,3,128,128).cuda(), './test.onnx', verbose=True, opset_version=opset_version,
+                          input_names=input_names,
+                          output_names=output_names, dynamic_axes=dynamic_axes)
+        raise 'convert done !'
+        
         outputs = self.keypoint_model.forward(human_images)
         return [outputs, metas]
 
