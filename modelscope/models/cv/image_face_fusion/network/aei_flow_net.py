@@ -245,7 +245,7 @@ class AEI_Net(nn.Module):
         output_flow['deformed'], flow = self.deform_input(Xt, deformation)
         output_flow['flow'] = self.flow_change(Xt, flow)
 
-        return Y, attr, output_flow
+        return Y #, attr, output_flow
 
     def get_attr(self, X):
         return self.encoder(X)

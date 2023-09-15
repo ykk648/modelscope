@@ -298,6 +298,20 @@ class ImageFaceFusion(TorchModel):
 
         with torch.no_grad():
             kp_fuse, kp_t = self.compute_3d_params(Xs, Xt)
+
+            def torch2onnx(model_, input_, output_name="./test.onnx"):
+                input_names = ["input_1", "input_2", "input_3", "input_4"]
+                output_names = ["output_1"]
+                opset_version = 16
+                dynamic_axes = None
+                # dynamic_axes = {'input_1': [0, 2, 3], 'output_1': [0, 1]}
+                torch.onnx.export(model_, input_, output_name, verbose=True, opset_version=opset_version,
+                                  input_names=input_names, output_names=output_names,
+                                  dynamic_axes=dynamic_axes, do_constant_folding=True)
+                raise 'convert done !'
+
+            torch2onnx(self.netG, (Xt, Xs_embeds, kp_fuse['value'], kp_t['value']))
+
             Yt, _, _ = self.netG(Xt, Xs_embeds, kp_fuse, kp_t)
             Yt = Yt * 0.5 + 0.5
             Yt = torch.clamp(Yt, 0, 1)
