@@ -773,19 +773,17 @@ class SpaceTCnModel(PreTrainedBertModel):
             classifier pretrained on top of the hidden state associated to the first character of the
             input (`CLF`) to train on the Next-Sentence task (see BERT's paper).
 
-    Example usage:
-    ```python
-    # Already been converted into WordPiece token ids
-    input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
-    input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
-    token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
+    Example:
+        >>> # Already been converted into WordPiece token ids
+        >>> input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
+        >>> input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
+        >>> token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
 
-    config = modeling.SpaceTCnConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
-        num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
+        >>> config = modeling.SpaceTCnConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
+        >>>     num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
 
-    model = modeling.SpaceTCnModel(config=config)
-    all_encoder_layers, pooled_output = model(input_ids, token_type_ids, input_mask)
-    ```
+        >>> model = modeling.SpaceTCnModel(config=config)
+        >>> all_encoder_layers, pooled_output = model(input_ids, token_type_ids, input_mask)
     """
 
     def __init__(self, config, schema_link_module='none'):
@@ -890,6 +888,9 @@ class Seq2SQL(nn.Module):
         self.action_model = nn.Linear(iS, n_action_ops + 1)
         self.slen_model = nn.Linear(iS, max_select_num + 1)
         self.wlen_model = nn.Linear(iS, max_where_num + 1)
+
+    def set_device(self, device):
+        self.device = device
 
     def forward(self, wemb_layer, l_n, l_hs, start_index, column_index, tokens,
                 ids):

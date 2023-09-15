@@ -4,20 +4,22 @@ import logging
 import os
 import pickle
 import shutil
+from collections.abc import Mapping
 
 import torch
 from torch import distributed as dist
 from tqdm import tqdm
 
 from modelscope.utils.data_utils import to_device
-from modelscope.utils.torch_utils import (broadcast, get_dist_info, is_master,
-                                          make_tmp_dir)
+from modelscope.utils.torch_utils import (broadcast, get_dist_info, is_dist,
+                                          is_master, make_tmp_dir)
 
 
 def single_gpu_test(trainer,
                     data_loader,
                     device,
                     metric_classes=None,
+                    vis_closure=None,
                     data_loader_iters=None):
     """Test model in EpochBasedTrainer with a single gpu.
 
@@ -25,7 +27,8 @@ def single_gpu_test(trainer,
         trainer (modelscope.trainers.EpochBasedTrainer): Trainer to be tested.
         data_loader (nn.Dataloader): Pytorch data loader.
         device (str | torch.device): The target device for the data.
-        metric_classes (List): List of Metric class that uses to collect metrics
+        metric_classes (List): List of Metric class that uses to collect metrics.
+        vis_closure (Callable): Collect data for TensorboardHook.
         data_loader_iters (int): Used when dataset has no attribute __len__ or only load part of dataset.
 
     Returns:
@@ -50,15 +53,12 @@ def single_gpu_test(trainer,
     with tqdm(total=data_len, desc=desc) as pbar:
         for i, data in enumerate(data_loader):
             data = to_device(data, device)
-            result = trainer.evaluation_step(data)
-            if metric_classes is not None:
-                for metric_cls in metric_classes:
-                    metric_cls.add(result, data)
+            evaluate_batch(trainer, data, metric_classes, vis_closure)
 
             if progress_with_iters:
                 batch_size = 1  # iteration count
             else:
-                if isinstance(data, dict):
+                if isinstance(data, Mapping):
                     if 'nsentences' in data:
                         batch_size = data['nsentences']
                     else:
@@ -74,19 +74,16 @@ def single_gpu_test(trainer,
             if progress_with_iters and (i + 1) >= data_len:
                 break
 
-    metric_values = {}
-    for metric_cls in metric_classes:
-        metric_values.update(metric_cls.evaluate())
-
-    return metric_values
+    return get_metric_values(metric_classes)
 
 
 def multi_gpu_test(trainer,
                    data_loader,
                    device,
+                   metric_classes=None,
+                   vis_closure=None,
                    tmpdir=None,
                    gpu_collect=False,
-                   metric_classes=None,
                    data_loader_iters_per_gpu=None):
     """Test model in EpochBasedTrainer with multiple gpus.
 
@@ -103,15 +100,12 @@ def multi_gpu_test(trainer,
         tmpdir (str): Path of directory to save the temporary results from
             different gpus under cpu mode.
         gpu_collect (bool): Option to use either gpu or cpu to collect results.
-        metric_classes(List): List of Metric class that uses to collect metrics
         data_loader_iters_per_gpu (int): Used when dataset has no attribute __len__ or only load part of dataset.
     Returns:
         list: The prediction results.
     """
-    results = []
-    data_list = []
     dataset = data_loader.dataset
-    rank, world_size = get_dist_info()
+    rank, world_size = get_dist_info(trainer.dp_group)
 
     progress_with_iters = False
     if data_loader_iters_per_gpu is None:
@@ -134,11 +128,10 @@ def multi_gpu_test(trainer,
     with tqdm(total=data_len, desc=desc) as pbar:
         for i, data in enumerate(data_loader):
             data = to_device(data, device)
-            data_list.append(data)
-            result = trainer.evaluation_step(data)
-            results.append(result)
 
-            if isinstance(data, dict):
+            evaluate_batch(trainer, data, metric_classes, vis_closure)
+
+            if isinstance(data, Mapping):
                 if 'nsentences' in data:
                     batch_size = data['nsentences']
                 else:
@@ -146,7 +139,8 @@ def multi_gpu_test(trainer,
             else:
                 batch_size = len(data)
             if i >= (data_len // world_size) - 1:
-                total_samples = torch.LongTensor([batch_size]).to(model.device)
+                total_samples = torch.LongTensor([batch_size
+                                                  ]).to(trainer.model.device)
                 dist.all_reduce(total_samples, op=dist.reduce_op.SUM)
                 total_samples = total_samples.item()
             else:
@@ -166,38 +160,44 @@ def multi_gpu_test(trainer,
             if progress_with_iters and (i + 1) >= data_len:
                 break
 
-    # TODO: allgather data list may cost a lot of memory and needs to be redesigned
     # collect results and data from all ranks
     if gpu_collect:
-        results = collect_results_gpu(results, total_samples)
-        data_list = collect_results_gpu(data_list, total_samples)
+        metric_classes_list = collect_results_gpu(metric_classes,
+                                                  trainer.dp_group)
     else:
         if tmpdir is None:
             tmpdir = make_tmp_dir()
-        results = collect_results_cpu(results, total_samples,
-                                      os.path.join(tmpdir, 'predict'))
-        data_list = collect_results_cpu(data_list, total_samples,
-                                        os.path.join(tmpdir, 'groundtruth'))
+        metric_classes_list = collect_results_cpu(
+            metric_classes, trainer, os.path.join(tmpdir, 'metrics'))
 
-    if is_master():
-        assert len(data_list) == len(
-            results), f'size mismatch {len(data_list)} and {len(results)}'
-        if metric_classes is not None:
-            for i in range(len(data_list)):
-                for metric_cls in metric_classes:
-                    metric_cls.add(results[i], data_list[i])
+    metric_classes = merge_metrics(metric_classes_list)
 
+    return get_metric_values(metric_classes)
+
+
+def evaluate_batch(trainer, data, metric_classes, vis_closure):
+    batch_result = trainer.evaluation_step(data)
+
+    if metric_classes is not None:
+        for metric_cls in metric_classes:
+            metric_cls.add(batch_result, data)
+
+    if vis_closure is not None:
+        # trainer.visualization
+        vis_closure(batch_result)
+
+
+def get_metric_values(metric_classes):
     metric_values = {}
-    if rank == 0:
+    if is_master():
         for metric_cls in metric_classes:
             metric_values.update(metric_cls.evaluate())
-    if world_size > 1:
+    if is_dist():
         metric_values = broadcast(metric_values, 0)
-
     return metric_values
 
 
-def collect_results_cpu(result_part, size, tmpdir=None):
+def collect_results_cpu(result_part, trainer, tmpdir=None):
     """Collect results under cpu mode.
 
     On cpu mode, this function will save the results on different gpus to
@@ -206,8 +206,7 @@ def collect_results_cpu(result_part, size, tmpdir=None):
     Args:
         result_part (list): Result list containing result parts
             to be collected.
-        size (int): Size of the results, commonly equal to length of
-            the results.
+        trainer(`EpochBasedTrainer`): The trainer instance to get the parallel groups.
         tmpdir (str | None): temporal directory for collected results to
             store. If set to None, it will create a random temporal directory
             for it.
@@ -215,19 +214,21 @@ def collect_results_cpu(result_part, size, tmpdir=None):
     Returns:
         list: The collected results.
     """
-    rank, world_size = get_dist_info()
+    rank, world_size = get_dist_info(trainer.dp_group)
     if tmpdir is None:
         tmpdir = make_tmp_dir()
-    if not os.path.exists(tmpdir) and is_master():
-        os.makedirs(tmpdir)
+    if not os.path.exists(tmpdir):
+        os.makedirs(tmpdir, exist_ok=True)
     dist.barrier()
 
     # dump the part result to the dir
-    with open(os.path.join(tmpdir, f'part_{rank}.pkl'), 'wb') as f:
-        pickle.dump(result_part, f)
+    if (not trainer.is_tp_group_available() or is_master(trainer.tp_group)) \
+            and (not trainer.is_pp_group_available() or is_master(trainer.pp_group)):
+        with open(os.path.join(tmpdir, f'part_{rank}.pkl'), 'wb') as f:
+            pickle.dump(result_part, f)
     dist.barrier()
     # collect all parts
-    if rank != 0:
+    if not is_master():
         return None
     else:
         # load results of all parts from tmp dir
@@ -240,18 +241,13 @@ def collect_results_cpu(result_part, size, tmpdir=None):
             # on a certain gpu could makes the overall outputs empty.
             if part_result:
                 part_list.append(part_result)
-        # sort the results
-        ordered_results = []
-        for res in zip(*part_list):
-            ordered_results.extend(list(res))
-        # the dataloader may pad some samples
-        ordered_results = ordered_results[:size]
+
         # remove tmp dir
         shutil.rmtree(tmpdir)
-        return ordered_results
+        return part_list
 
 
-def collect_results_gpu(result_part, size):
+def collect_results_gpu(result_part, dp_group=None):
     """Collect results under gpu mode.
 
     On gpu mode, this function will encode results to gpu tensors and use gpu
@@ -260,20 +256,20 @@ def collect_results_gpu(result_part, size):
     Args:
         result_part (list): Result list containing result parts
             to be collected.
-        size (int): Size of the results, commonly equal to length of
-            the results.
+        dp_group(`ProcessGroup` or None): The data parallel group, default None for global group.
 
     Returns:
         list: The collected results.
     """
-    rank, world_size = get_dist_info()
+    _, world_size = get_dist_info(dp_group)
+
     # dump result part to tensor with pickle
     part_tensor = torch.tensor(
         bytearray(pickle.dumps(result_part)), dtype=torch.uint8, device='cuda')
     # gather all result part tensor shape
     shape_tensor = torch.tensor(part_tensor.shape, device='cuda')
     shape_list = [shape_tensor.clone() for _ in range(world_size)]
-    dist.all_gather(shape_list, shape_tensor)
+    dist.all_gather(shape_list, shape_tensor, dp_group)
     # padding result part tensor to max length
     shape_max = torch.tensor(shape_list).max()
     part_send = torch.zeros(shape_max, dtype=torch.uint8, device='cuda')
@@ -282,9 +278,9 @@ def collect_results_gpu(result_part, size):
         part_tensor.new_zeros(shape_max) for _ in range(world_size)
     ]
     # gather all result part
-    dist.all_gather(part_recv_list, part_send)
+    dist.all_gather(part_recv_list, part_send, dp_group)
 
-    if rank == 0:
+    if is_master():
         part_list = []
         for recv, shape in zip(part_recv_list, shape_list):
             part_result = pickle.loads(recv[:shape[0]].cpu().numpy().tobytes())
@@ -292,10 +288,16 @@ def collect_results_gpu(result_part, size):
             # on a certain gpu could makes the overall outputs empty.
             if part_result:
                 part_list.append(part_result)
-        # sort the results
-        ordered_results = []
-        for res in zip(*part_list):
-            ordered_results.extend(list(res))
-        # the dataloader may pad some samples
-        ordered_results = ordered_results[:size]
-        return ordered_results
+
+        return part_list
+
+
+def merge_metrics(metric_classes_list):
+    if metric_classes_list is None:
+        return None
+
+    metric_classes_0 = metric_classes_list[0]
+    for metric_classes_i in metric_classes_list[1:]:
+        for cls_0, cls_i in zip(metric_classes_0, metric_classes_i):
+            cls_0.merge(cls_i)
+    return metric_classes_0

@@ -3,18 +3,16 @@ import unittest
 
 from modelscope.hub.snapshot_download import snapshot_download
 from modelscope.models import Model
-from modelscope.models.nlp.task_models.sequence_classification import \
-    SequenceClassificationModel
+from modelscope.models.nlp.task_models.text_classification import \
+    ModelForTextClassification
 from modelscope.pipelines import pipeline
 from modelscope.pipelines.nlp import TextClassificationPipeline
-from modelscope.preprocessors import SequenceClassificationPreprocessor
+from modelscope.preprocessors import TextClassificationTransformersPreprocessor
 from modelscope.utils.constant import Tasks
-from modelscope.utils.demo_utils import DemoCompatibilityCheck
 from modelscope.utils.test_utils import test_level
 
 
-class SentimentClassificationTaskModelTest(unittest.TestCase,
-                                           DemoCompatibilityCheck):
+class SentimentClassificationTaskModelTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.task = Tasks.text_classification
@@ -25,8 +23,8 @@ class SentimentClassificationTaskModelTest(unittest.TestCase,
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_run_with_direct_file_download(self):
         cache_path = snapshot_download(self.model_id)
-        tokenizer = SequenceClassificationPreprocessor(cache_path)
-        model = SequenceClassificationModel.from_pretrained(
+        tokenizer = TextClassificationTransformersPreprocessor(cache_path)
+        model = ModelForTextClassification.from_pretrained(
             self.model_id, num_labels=2)
         pipeline1 = TextClassificationPipeline(model, preprocessor=tokenizer)
         pipeline2 = pipeline(
@@ -39,14 +37,14 @@ class SentimentClassificationTaskModelTest(unittest.TestCase,
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_run_with_model_from_modelhub(self):
         model = Model.from_pretrained(self.model_id)
-        tokenizer = SequenceClassificationPreprocessor(model.model_dir)
+        tokenizer = TextClassificationTransformersPreprocessor(model.model_dir)
         pipeline_ins = pipeline(
             task=Tasks.text_classification,
             model=model,
             preprocessor=tokenizer)
         print(pipeline_ins(input=self.sentence1))
         self.assertTrue(
-            isinstance(pipeline_ins.model, SequenceClassificationModel))
+            isinstance(pipeline_ins.model, ModelForTextClassification))
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_run_with_model_name(self):
@@ -54,18 +52,14 @@ class SentimentClassificationTaskModelTest(unittest.TestCase,
             task=Tasks.text_classification, model=self.model_id)
         print(pipeline_ins(input=self.sentence1))
         self.assertTrue(
-            isinstance(pipeline_ins.model, SequenceClassificationModel))
+            isinstance(pipeline_ins.model, ModelForTextClassification))
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_run_with_default_model(self):
         pipeline_ins = pipeline(task=Tasks.text_classification)
         print(pipeline_ins(input=self.sentence1))
         self.assertTrue(
-            isinstance(pipeline_ins.model, SequenceClassificationModel))
-
-    @unittest.skip('demo compatibility test is only enabled on a needed-basis')
-    def test_demo_compatibility(self):
-        self.compatibility_check()
+            isinstance(pipeline_ins.model, ModelForTextClassification))
 
 
 if __name__ == '__main__':

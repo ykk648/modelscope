@@ -36,8 +36,11 @@ class ANSPipeline(Pipeline):
         """
         super().__init__(model=model, **kwargs)
         self.model.eval()
+        self.stream_mode = kwargs.get('stream_mode', False)
 
     def preprocess(self, inputs: Input, **preprocess_params) -> Dict[str, Any]:
+        if self.stream_mode:
+            raise TypeError('This model does not support stream mode!')
         if isinstance(inputs, bytes):
             data1, fs = sf.read(io.BytesIO(inputs))
         elif isinstance(inputs, str):
@@ -48,7 +51,8 @@ class ANSPipeline(Pipeline):
         if len(data1.shape) > 1:
             data1 = data1[:, 0]
         if fs != self.SAMPLE_RATE:
-            data1 = librosa.resample(data1, fs, self.SAMPLE_RATE)
+            data1 = librosa.resample(
+                data1, orig_sr=fs, target_sr=self.SAMPLE_RATE)
         data1 = audio_norm(data1)
         data = data1.astype(np.float32)
         inputs = np.reshape(data, [1, data.shape[0]])

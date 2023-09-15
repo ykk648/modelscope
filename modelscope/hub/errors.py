@@ -2,6 +2,7 @@
 
 from http import HTTPStatus
 
+import requests
 from requests.exceptions import HTTPError
 
 from modelscope.utils.logger import get_logger
@@ -49,22 +50,30 @@ def is_ok(rsp):
     """ Check the request is ok
 
     Args:
-        rsp (_type_): The request response body
-        Failed: {'Code': 10010101004, 'Message': 'get model info failed, err: unauthorized permission',
-                 'RequestId': '', 'Success': False}
-        Success: {'Code': 200, 'Data': {}, 'Message': 'success', 'RequestId': '', 'Success': True}
+        rsp (Response): The request response body
+
+    Returns:
+       bool: `True` if success otherwise `False`.
     """
     return rsp['Code'] == HTTPStatus.OK and rsp['Success']
+
+
+def _decode_response_error(response: requests.Response):
+    if 'application/json' in response.headers.get('content-type', ''):
+        message = response.json()
+    else:
+        message = response.content.decode('utf-8')
+    return message
 
 
 def handle_http_post_error(response, url, request_body):
     try:
         response.raise_for_status()
     except HTTPError as error:
-        logger.error('Request %s with body: %s exception' %
-                     (url, request_body))
-        logger.error('Response details: %s' % response.content)
-        raise error
+        message = _decode_response_error(response)
+        raise HTTPError('Request %s with body: %s exception, '
+                        'Response details: %s' %
+                        (url, request_body, message)) from error
 
 
 def handle_http_response(response, logger, cookies, model_id):
@@ -75,8 +84,8 @@ def handle_http_response(response, logger, cookies, model_id):
             logger.error(
                 f'Authentication token does not exist, failed to access model {model_id} which may not exist or may be \
                 private. Please login first.')
-        logger.error('Response details: %s' % response.content)
-        raise error
+        message = _decode_response_error(response)
+        raise HTTPError('Response details: %s' % message) from error
 
 
 def raise_on_error(rsp):
@@ -84,6 +93,12 @@ def raise_on_error(rsp):
 
     Args:
         rsp (_type_): The server response
+
+    Raises:
+        RequestError: the response error message.
+
+    Returns:
+        bool: True if request is OK, otherwise raise `RequestError` exception.
     """
     if rsp['Code'] == HTTPStatus.OK:
         return True
@@ -91,26 +106,37 @@ def raise_on_error(rsp):
         raise RequestError(rsp['Message'])
 
 
-# TODO use raise_on_error instead if modelhub and datahub response have uniform structures,
 def datahub_raise_on_error(url, rsp):
     """If response error, raise exception
 
     Args:
-        rsp (_type_): The server response
+        url (str): The request url
+        rsp (HTTPResponse): The server response.
+
+    Raises:
+        RequestError: the http request error.
+
+    Returns:
+        bool: `True` if request is OK, otherwise raise `RequestError` exception.
     """
     if rsp.get('Code') == HTTPStatus.OK:
         return True
     else:
         raise RequestError(
-            f"Url = {url}, Status = {rsp.get('status')}, error = {rsp.get('error')}, message = {rsp.get('message')}"
+            f"Url = {url}, Message = {rsp.get('Message')}, Please specify correct dataset_name and namespace."
         )
 
 
 def raise_for_http_status(rsp):
-    """
-    Attempt to decode utf-8 first since some servers
+    """Attempt to decode utf-8 first since some servers
     localize reason strings, for invalid utf-8, fall back
     to decoding with iso-8859-1.
+
+    Args:
+        rsp: The http response.
+
+    Raises:
+        HTTPError: The http error info.
     """
     http_error_msg = ''
     if isinstance(rsp.reason, bytes):

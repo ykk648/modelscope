@@ -8,28 +8,46 @@ if TYPE_CHECKING:
     from .builder import PREPROCESSORS, build_preprocessor
     from .common import Compose, ToTensor, Filter
     from .asr import WavToScp
-    from .audio import LinearAECAndFbank
+    from .audio import LinearAECAndFbank, AudioBrainPreprocessor
     from .image import (LoadImage, load_image,
                         ImageColorEnhanceFinetunePreprocessor,
                         ImageInstanceSegmentationPreprocessor,
-                        ImageDenoisePreprocessor)
+                        ImageDenoisePreprocessor, ImageDeblurPreprocessor)
+    from .cv import (ImageClassificationMmcvPreprocessor,
+                     ImageRestorationPreprocessor,
+                     ControllableImageGenerationPreprocessor)
     from .kws import WavToLists
-    from .multi_modal import (OfaPreprocessor, MPlugPreprocessor)
+    from .tts import KanttsDataPreprocessor
+    from .multi_modal import (DiffusionImageGenerationPreprocessor,
+                              OfaPreprocessor, MPlugPreprocessor,
+                              HiTeAPreprocessor, MplugOwlPreprocessor,
+                              ImageCaptioningClipInterrogatorPreprocessor)
     from .nlp import (
-        DocumentSegmentationPreprocessor, FaqQuestionAnsweringPreprocessor,
-        FillMaskPoNetPreprocessor, NLPPreprocessor,
-        NLPTokenizerPreprocessorBase, PassageRankingPreprocessor,
-        TextRankingPreprocessor, RelationExtractionPreprocessor,
-        SentenceEmbeddingPreprocessor, SequenceClassificationPreprocessor,
-        TokenClassificationPreprocessor, TextErrorCorrectionPreprocessor,
-        TextGenerationPreprocessor, Text2TextGenerationPreprocessor, Tokenize,
-        WordSegmentationBlankSetToLabelPreprocessor,
-        MGLMSummarizationPreprocessor, ZeroShotClassificationPreprocessor,
+        DocumentSegmentationTransformersPreprocessor,
+        FaqQuestionAnsweringTransformersPreprocessor,
+        FillMaskPoNetPreprocessor, FillMaskTransformersPreprocessor,
+        TextRankingTransformersPreprocessor,
+        RelationExtractionTransformersPreprocessor,
+        SentenceEmbeddingTransformersPreprocessor,
+        TextClassificationTransformersPreprocessor,
+        TextGenerationSentencePiecePreprocessor,
+        TokenClassificationTransformersPreprocessor,
+        TextErrorCorrectionPreprocessor, TextGenerationT5Preprocessor,
+        WordAlignmentPreprocessor, TextGenerationTransformersPreprocessor,
+        Tokenize, WordSegmentationBlankSetToLabelPreprocessor,
+        MGLMSummarizationPreprocessor,
+        ZeroShotClassificationTransformersPreprocessor,
         TextGenerationJiebaPreprocessor, SentencePiecePreprocessor,
         DialogIntentPredictionPreprocessor, DialogModelingPreprocessor,
         DialogStateTrackingPreprocessor, ConversationalTextToSqlPreprocessor,
         TableQuestionAnsweringPreprocessor, NERPreprocessorViet,
-        NERPreprocessorThai, WordSegmentationPreprocessorThai)
+        NERPreprocessorThai, WordSegmentationPreprocessorThai,
+        TranslationEvaluationTransformersPreprocessor,
+        CanmtTranslationPreprocessor, DialogueClassificationUsePreprocessor,
+        SiameseUiePreprocessor, DocumentGroundedDialogGeneratePreprocessor,
+        DocumentGroundedDialogRetrievalPreprocessor,
+        DocumentGroundedDialogRerankPreprocessor,
+        MachineReadingComprehensionForNERPreprocessor)
     from .video import ReadVideoData, MovieSceneSegmentationPreprocessor
 
 else:
@@ -37,35 +55,66 @@ else:
         'base': ['Preprocessor'],
         'builder': ['PREPROCESSORS', 'build_preprocessor'],
         'common': ['Compose', 'ToTensor', 'Filter'],
-        'audio': ['LinearAECAndFbank'],
+        'audio': ['LinearAECAndFbank', 'AudioBrainPreprocessor'],
         'asr': ['WavToScp'],
         'video': ['ReadVideoData', 'MovieSceneSegmentationPreprocessor'],
         'image': [
             'LoadImage', 'load_image', 'ImageColorEnhanceFinetunePreprocessor',
-            'ImageInstanceSegmentationPreprocessor', 'ImageDenoisePreprocessor'
+            'ImageInstanceSegmentationPreprocessor',
+            'ImageDenoisePreprocessor', 'ImageDeblurPreprocessor'
+        ],
+        'cv': [
+            'ImageClassificationMmcvPreprocessor',
+            'ImageRestorationPreprocessor',
+            'ControllableImageGenerationPreprocessor'
         ],
         'kws': ['WavToLists'],
-        'multi_modal': ['OfaPreprocessor', 'MPlugPreprocessor'],
+        'tts': ['KanttsDataPreprocessor'],
+        'multi_modal': [
+            'DiffusionImageGenerationPreprocessor', 'OfaPreprocessor',
+            'MPlugPreprocessor', 'HiTeAPreprocessor', 'MplugOwlPreprocessor',
+            'ImageCaptioningClipInterrogatorPreprocessor'
+        ],
         'nlp': [
-            'DocumentSegmentationPreprocessor',
-            'FaqQuestionAnsweringPreprocessor', 'FillMaskPoNetPreprocessor',
-            'NLPPreprocessor', 'NLPTokenizerPreprocessorBase',
-            'TextRankingPreprocessor', 'RelationExtractionPreprocessor',
-            'SentenceEmbeddingPreprocessor',
-            'SequenceClassificationPreprocessor',
-            'TokenClassificationPreprocessor',
-            'TextErrorCorrectionPreprocessor', 'TextGenerationPreprocessor',
-            'Tokenize', 'Text2TextGenerationPreprocessor',
+            'DocumentSegmentationTransformersPreprocessor',
+            'FaqQuestionAnsweringTransformersPreprocessor',
+            'FillMaskPoNetPreprocessor',
+            'FillMaskTransformersPreprocessor',
+            'NLPTokenizerPreprocessorBase',
+            'TextRankingTransformersPreprocessor',
+            'RelationExtractionTransformersPreprocessor',
+            'SentenceEmbeddingTransformersPreprocessor',
+            'TextGenerationSentencePiecePreprocessor',
+            'TextClassificationTransformersPreprocessor',
+            'TokenClassificationTransformersPreprocessor',
+            'TextErrorCorrectionPreprocessor',
+            'WordAlignmentPreprocessor',
+            'TextGenerationTransformersPreprocessor',
+            'Tokenize',
+            'TextGenerationT5Preprocessor',
             'WordSegmentationBlankSetToLabelPreprocessor',
             'MGLMSummarizationPreprocessor',
-            'ZeroShotClassificationPreprocessor',
-            'TextGenerationJiebaPreprocessor', 'SentencePiecePreprocessor',
-            'NERPreprocessorViet', 'NERPreprocessorThai',
+            'CodeGeeXPreprocessor',
+            'ZeroShotClassificationTransformersPreprocessor',
+            'TextGenerationJiebaPreprocessor',
+            'SentencePiecePreprocessor',
+            'NERPreprocessorViet',
+            'NERPreprocessorThai',
             'WordSegmentationPreprocessorThai',
-            'DialogIntentPredictionPreprocessor', 'DialogModelingPreprocessor',
+            'DialogIntentPredictionPreprocessor',
+            'DialogModelingPreprocessor',
             'DialogStateTrackingPreprocessor',
             'ConversationalTextToSqlPreprocessor',
-            'TableQuestionAnsweringPreprocessor'
+            'TableQuestionAnsweringPreprocessor',
+            'TranslationEvaluationTransformersPreprocessor',
+            'CanmtTranslationPreprocessor',
+            'DialogueClassificationUsePreprocessor',
+            'SiameseUiePreprocessor',
+            'DialogueClassificationUsePreprocessor',
+            'DocumentGroundedDialogGeneratePreprocessor',
+            'DocumentGroundedDialogRetrievalPreprocessor',
+            'DocumentGroundedDialogRerankPreprocessor',
+            'MachineReadingComprehensionForNERPreprocessor',
         ],
     }
 

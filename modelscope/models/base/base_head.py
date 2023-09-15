@@ -13,8 +13,7 @@ Input = Union[Dict[str, Tensor], Model]
 
 
 class Head(ABC):
-    """
-    The head base class is for the tasks head method definition
+    """The head base class is for the tasks head method definition
 
     """
 
@@ -25,7 +24,7 @@ class Head(ABC):
     def forward(self, *args, **kwargs) -> Dict[str, Any]:
         """
         This method will use the output from backbone model to do any
-        downstream tasks. Recieve The output from backbone model.
+        downstream tasks. Receive The output from backbone model.
 
         Returns (Dict[str, Any]): The output from downstream task.
         """

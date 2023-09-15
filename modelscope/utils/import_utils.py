@@ -7,7 +7,6 @@ import os
 import os.path as osp
 import sys
 from collections import OrderedDict
-from functools import wraps
 from importlib import import_module
 from itertools import chain
 from pathlib import Path
@@ -20,8 +19,6 @@ from modelscope.utils.ast_utils import (INDEX_KEY, MODULE_KEY, REQUIREMENT_KEY,
                                         load_index)
 from modelscope.utils.error import *  # noqa
 from modelscope.utils.logger import get_logger
-
-logger = get_logger(__name__)
 
 if sys.version_info < (3, 8):
     import importlib_metadata
@@ -245,6 +242,14 @@ def is_torch_cuda_available():
         return False
 
 
+def is_wenetruntime_available():
+    return importlib.util.find_spec('wenetruntime') is not None
+
+
+def is_swift_available():
+    return importlib.util.find_spec('swift') is not None
+
+
 def is_tf_available():
     return _tf_available
 
@@ -280,19 +285,31 @@ REQUIREMENTS_MAAPING = OrderedDict([
     ('timm', (is_timm_available, TIMM_IMPORT_ERROR)),
     ('tokenizers', (is_tokenizers_available, TOKENIZERS_IMPORT_ERROR)),
     ('torch', (is_torch_available, PYTORCH_IMPORT_ERROR)),
+    ('wenetruntime',
+     (is_wenetruntime_available,
+      WENETRUNTIME_IMPORT_ERROR.replace('TORCH_VER', _torch_version))),
     ('scipy', (is_scipy_available, SCIPY_IMPORT_ERROR)),
     ('cv2', (is_opencv_available, OPENCV_IMPORT_ERROR)),
     ('PIL', (is_pillow_available, PILLOW_IMPORT_ERROR)),
+    ('pai-easynlp', (is_package_available('easynlp'), EASYNLP_IMPORT_ERROR)),
     ('espnet2', (is_espnet_available,
                  GENERAL_IMPORT_ERROR.replace('REQ', 'espnet'))),
     ('espnet', (is_espnet_available,
                 GENERAL_IMPORT_ERROR.replace('REQ', 'espnet'))),
-    ('easyasr', (is_package_available('easyasr'), AUDIO_IMPORT_ERROR)),
+    ('funasr', (is_package_available('funasr'), AUDIO_IMPORT_ERROR)),
     ('kwsbp', (is_package_available('kwsbp'), AUDIO_IMPORT_ERROR)),
     ('decord', (is_package_available('decord'), DECORD_IMPORT_ERROR)),
     ('deepspeed', (is_package_available('deepspeed'), DEEPSPEED_IMPORT_ERROR)),
     ('fairseq', (is_package_available('fairseq'), FAIRSEQ_IMPORT_ERROR)),
     ('fasttext', (is_package_available('fasttext'), FASTTEXT_IMPORT_ERROR)),
+    ('megatron_util', (is_package_available('megatron_util'),
+                       MEGATRON_UTIL_IMPORT_ERROR)),
+    ('text2sql_lgesql', (is_package_available('text2sql_lgesql'),
+                         TEXT2SQL_LGESQL_IMPORT_ERROR)),
+    ('mpi4py', (is_package_available('mpi4py'), MPI4PY_IMPORT_ERROR)),
+    ('open_clip', (is_package_available('open_clip'), OPENCLIP_IMPORT_ERROR)),
+    ('taming', (is_package_available('taming'), TAMING_IMPORT_ERROR)),
+    ('xformers', (is_package_available('xformers'), XFORMERS_IMPORT_ERROR)),
 ])
 
 SYSTEM_PACKAGE = set(['os', 'sys', 'typing'])
@@ -382,7 +399,7 @@ class LazyImportModule(ModuleType):
             try:
                 getattr(self, sub_module)
             except Exception as e:
-                logger.warn(
+                logger.warning(
                     f'pre load module {sub_module} error, please check {e}')
 
     # Needed for autocompletion in an IDE

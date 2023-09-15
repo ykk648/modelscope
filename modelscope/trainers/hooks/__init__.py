@@ -5,7 +5,7 @@ from modelscope.utils.import_utils import LazyImportModule
 
 if TYPE_CHECKING:
     from .builder import HOOKS, build_hook
-    from .checkpoint_hook import BestCkptSaverHook, CheckpointHook
+    from .early_stop_hook import EarlyStopHook
     from .compression import SparsityHook
     from .evaluation_hook import EvaluationHook
     from .hook import Hook
@@ -15,22 +15,32 @@ if TYPE_CHECKING:
     from .optimizer import (ApexAMPOptimizerHook, NoneOptimizerHook,
                             OptimizerHook, TorchAMPOptimizerHook)
     from .priority import Priority, get_priority
+    from .checkpoint import CheckpointHook, LoadCheckpointHook, BestCkptSaverHook
+    from .distributed.ddp_hook import DDPHook
+    from .distributed.deepspeed_hook import DeepspeedHook
+    from .distributed.megatron_hook import MegatronHook
 
 else:
     _import_structure = {
         'builder': ['HOOKS', 'build_hook'],
-        'checkpoint_hook': ['BestCkptSaverHook', 'CheckpointHook'],
+        'checkpoint_hook':
+        ['BestCkptSaverHook', 'CheckpointHook', 'LoadCheckpointHook'],
         'compression': ['SparsityHook'],
         'evaluation_hook': ['EvaluationHook'],
         'hook': ['Hook'],
         'iter_timer_hook': ['IterTimerHook'],
         'logger': ['TensorboardHook', 'TextLoggerHook'],
-        'lr_scheduler_hook': ['LrSchedulerHook'],
-        'optimizer_hook': [
+        'lr_scheduler_hook': ['LrSchedulerHook', 'NoneLrSchedulerHook'],
+        'optimizer': [
             'ApexAMPOptimizerHook', 'NoneOptimizerHook', 'OptimizerHook',
             'TorchAMPOptimizerHook'
         ],
-        'priority': ['Priority', 'get']
+        'checkpoint':
+        ['CheckpointHook', 'LoadCheckpointHook', 'BestCkptSaverHook'],
+        'distributed.ddp_hook': ['DDPHook'],
+        'distributed.deepspeed_hook': ['DeepspeedHook'],
+        'distributed.megatron_hook': ['MegatronHook'],
+        'priority': ['Priority', 'get_priority']
     }
 
     import sys

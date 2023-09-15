@@ -1,22 +1,23 @@
 addict
 attrs
-# version beyond 2.5.2 introduces compatbility issue and is being resolved
-datasets<=2.5.2
-easydict
+datasets>=2.8.0,<=2.13.0
 einops
 filelock>=3.3.0
 gast>=0.2.2
-jsonplus
+ms-swift
 numpy
-opencv-python
 oss2
+pandas
 Pillow>=6.2.0
-# for pyarrow 9.0.0 event_loop core dump
+# pyarrow 9.0.0 introduced event_loop core dump
 pyarrow>=6.0.0,!=9.0.0
+python-dateutil>=2.1
 pyyaml
-requests
+requests>=2.25
 scipy
 setuptools
-tensorboard
+simplejson>=3.3.0
+sortedcontainers>=1.5.9
 tqdm>=4.64.0
+urllib3>=1.26
 yapf

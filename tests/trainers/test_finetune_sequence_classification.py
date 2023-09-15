@@ -8,17 +8,17 @@ from modelscope.metainfo import Preprocessors, Trainers
 from modelscope.models import Model
 from modelscope.msdatasets import MsDataset
 from modelscope.pipelines import pipeline
-from modelscope.trainers import NlpTrainerArguments, build_trainer
+from modelscope.trainers import build_trainer
 from modelscope.trainers.hooks import Hook
 from modelscope.trainers.nlp_trainer import (EpochBasedTrainer,
                                              NlpEpochBasedTrainer)
 from modelscope.trainers.optimizer.child_tuning_adamw_optimizer import \
     calculate_fisher
+from modelscope.trainers.training_args import TrainingArgs
 from modelscope.utils.constant import ModelFile, Tasks
 from modelscope.utils.data_utils import to_device
 from modelscope.utils.regress_test_utils import (MsRegressTool,
                                                  compare_arguments_nested)
-from modelscope.utils.test_utils import test_level
 
 
 class TestFinetuneSequenceClassification(unittest.TestCase):
@@ -43,7 +43,7 @@ class TestFinetuneSequenceClassification(unittest.TestCase):
         dataset = MsDataset.load('clue', subset_name='tnews')
         train_dataset = dataset['train']
         validation_dataset = dataset['validation']
-        cfg_modify_fn = NlpTrainerArguments(
+        cfg_modify_fn = TrainingArgs(
             task=Tasks.text_classification,
             preprocessor_type=Preprocessors.sen_cls_tokenizer,
             train_first_sequence='sentence',
@@ -340,21 +340,16 @@ class TestFinetuneSequenceClassification(unittest.TestCase):
         User can train a custom dataset by modifying this piece of code and comment the @unittest.skip.
         """
 
-        from datasets import load_dataset
         langs = ['en']
         langs_eval = ['en']
         train_datasets = []
-        from datasets import DownloadConfig
-        dc = DownloadConfig()
-        dc.local_files_only = False
         for lang in langs:
             train_datasets.append(
-                load_dataset('xnli', lang, split='train', download_config=dc))
+                MsDataset.load('xnli', subset_name=lang, split='train'))
         eval_datasets = []
         for lang in langs_eval:
             eval_datasets.append(
-                load_dataset(
-                    'xnli', lang, split='validation', download_config=dc))
+                MsDataset.load('xnli', subset_name=lang, split='validation'))
         train_len = sum([len(dataset) for dataset in train_datasets])
         labels = ['0', '1', '2']
 

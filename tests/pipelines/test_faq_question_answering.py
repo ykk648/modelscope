@@ -9,17 +9,19 @@ from modelscope.models import Model
 from modelscope.models.nlp import SbertForFaqQuestionAnswering
 from modelscope.pipelines import pipeline
 from modelscope.pipelines.nlp import FaqQuestionAnsweringPipeline
-from modelscope.preprocessors import FaqQuestionAnsweringPreprocessor
+from modelscope.preprocessors import \
+    FaqQuestionAnsweringTransformersPreprocessor
 from modelscope.utils.constant import Tasks
-from modelscope.utils.demo_utils import DemoCompatibilityCheck
 from modelscope.utils.test_utils import test_level
 
 
-class FaqQuestionAnsweringTest(unittest.TestCase, DemoCompatibilityCheck):
+class FaqQuestionAnsweringTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.task = Tasks.faq_question_answering
         self.model_id = 'damo/nlp_structbert_faq-question-answering_chinese-base'
+        self.mgimn_model_id = 'damo/nlp_mgimn_faq-question-answering_chinese-base'
+        self.model_id_multilingual = 'damo/nlp_faq-question-answering_multilingual-base'
 
     param = {
         'query_set': ['如何使用优惠券', '在哪里领券', '在哪里领券'],
@@ -47,7 +49,7 @@ class FaqQuestionAnsweringTest(unittest.TestCase, DemoCompatibilityCheck):
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_run_with_direct_file_download(self):
         cache_path = snapshot_download(self.model_id)
-        preprocessor = FaqQuestionAnsweringPreprocessor.from_pretrained(
+        preprocessor = FaqQuestionAnsweringTransformersPreprocessor.from_pretrained(
             cache_path)
         model = SbertForFaqQuestionAnswering.from_pretrained(cache_path)
         pipeline_ins = FaqQuestionAnsweringPipeline(
@@ -58,7 +60,8 @@ class FaqQuestionAnsweringTest(unittest.TestCase, DemoCompatibilityCheck):
     @unittest.skipUnless(test_level() >= 1, 'skip test in current test level')
     def test_run_with_model_from_modelhub(self):
         model = Model.from_pretrained(self.model_id)
-        preprocessor = FaqQuestionAnsweringPreprocessor(model.model_dir)
+        preprocessor = FaqQuestionAnsweringTransformersPreprocessor(
+            model.model_dir)
         pipeline_ins = pipeline(
             task=Tasks.faq_question_answering,
             model=model,
@@ -73,9 +76,23 @@ class FaqQuestionAnsweringTest(unittest.TestCase, DemoCompatibilityCheck):
         result = pipeline_ins(self.param)
         print(result)
 
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_multilingual_model(self):
+        pipeline_ins = pipeline(
+            task=Tasks.faq_question_answering,
+            model=self.model_id_multilingual)
+        result = pipeline_ins(self.param)
+        print(result)
+
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_run_with_default_model(self):
         pipeline_ins = pipeline(task=Tasks.faq_question_answering)
+        print(pipeline_ins(self.param, max_seq_length=20))
+
+    @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
+    def test_run_with_mgimn_model(self):
+        pipeline_ins = pipeline(
+            task=Tasks.faq_question_answering, model=self.mgimn_model_id)
         print(pipeline_ins(self.param, max_seq_length=20))
 
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
@@ -84,10 +101,6 @@ class FaqQuestionAnsweringTest(unittest.TestCase, DemoCompatibilityCheck):
         sentence_vec = pipeline_ins.get_sentence_embedding(
             ['今天星期六', '明天星期几明天星期几'])
         print(np.shape(sentence_vec))
-
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
-    def test_demo_compatibility(self):
-        self.compatibility_check()
 
 
 if __name__ == '__main__':

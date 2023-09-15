@@ -1,5 +1,5 @@
 # The implementation here is modified based on SceneSeg,
-# originally Apache 2.0 License and publicly avaialbe at https://github.com/AnyiRao/SceneSeg
+# originally Apache 2.0 License and publicly available at https://github.com/AnyiRao/SceneSeg
 import os
 import os.path as osp
 import subprocess
@@ -10,11 +10,12 @@ from tqdm import tqdm
 
 
 def get_pred_boundary(pred_dict, threshold=0.5):
-    pred = pred_dict['pred']
+    pred = pred_dict['pred'].cpu().numpy()
+    sid = pred_dict['sid'].cpu().numpy().astype(np.int32)
     tmp = (pred > threshold).astype(np.int32)
     anno_dict = {}
     for idx in range(len(tmp)):
-        anno_dict.update({str(pred_dict['sid'][idx]).zfill(4): int(tmp[idx])})
+        anno_dict.update({str(sid[idx]).zfill(4): int(tmp[idx])})
     return anno_dict
 
 

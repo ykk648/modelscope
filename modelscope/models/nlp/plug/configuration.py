@@ -21,7 +21,7 @@ from transformers import PretrainedConfig
 
 from modelscope.utils import logger as logging
 
-logger = logging.get_logger(__name__)
+logger = logging.get_logger()
 
 
 class PlugNLUConfig(PretrainedConfig):
@@ -183,7 +183,6 @@ class PlugNLGConfig(PlugNLUConfig):
 
     Example:
 
-    ```python
     >>> # The PLUG model has 27B parameters and usually need to run on multiple GPUs. The example given
     >>> # here only initializes a slice of the model on a single GPU.
     >>> # Check out the [`~DistributedPipeline.__init__`] method to initialize entire PLUG model.
@@ -197,7 +196,6 @@ class PlugNLGConfig(PlugNLUConfig):
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
-    ```
     """
 
     model_type = 'plugNLG'
@@ -225,7 +223,7 @@ class PlugNLGConfig(PlugNLUConfig):
                  fp32_layernorm=True,
                  fp32_embedding=False,
                  fp32_tokentypes=False,
-                 layernorm_epsilon=1e-5,
+                 layernorm_epsilon=1e-12,
                  attn_separate=False,
                  **kwargs):
         super().__init__(layer_norm_eps=layernorm_epsilon, **kwargs)

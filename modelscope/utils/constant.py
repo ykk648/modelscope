@@ -16,13 +16,20 @@ class CVTasks(object):
     # ocr
     ocr_detection = 'ocr-detection'
     ocr_recognition = 'ocr-recognition'
+    table_recognition = 'table-recognition'
+    lineless_table_recognition = 'lineless-table-recognition'
+    license_plate_detection = 'license-plate-detection'
 
     # human face body related
     animal_recognition = 'animal-recognition'
     face_detection = 'face-detection'
+    face_liveness = 'face-liveness'
+    face_quality_assessment = 'face-quality-assessment'
     card_detection = 'card-detection'
     face_recognition = 'face-recognition'
     facial_expression_recognition = 'facial-expression-recognition'
+    face_processing_base = 'face-processing-base'
+    face_attribute_recognition = 'face-attribute-recognition'
     face_2d_keypoints = 'face-2d-keypoints'
     human_detection = 'human-detection'
     human_object_interaction = 'human-object-interaction'
@@ -32,6 +39,7 @@ class CVTasks(object):
     hand_2d_keypoints = 'hand-2d-keypoints'
     general_recognition = 'general-recognition'
     human_wholebody_keypoint = 'human-wholebody-keypoint'
+    pedestrian_attribute_recognition = 'pedestrian-attribute-recognition'
 
     image_classification = 'image-classification'
     image_multilabel_classification = 'image-multilabel-classification'
@@ -40,27 +48,44 @@ class CVTasks(object):
 
     image_object_detection = 'image-object-detection'
     video_object_detection = 'video-object-detection'
+    image_fewshot_detection = 'image-fewshot-detection'
+    open_vocabulary_detection = 'open-vocabulary-detection'
+    object_detection_3d = 'object-detection-3d'
 
     image_segmentation = 'image-segmentation'
     semantic_segmentation = 'semantic-segmentation'
+    image_driving_perception = 'image-driving-perception'
+    image_depth_estimation = 'image-depth-estimation'
+    indoor_layout_estimation = 'indoor-layout-estimation'
+    video_depth_estimation = 'video-depth-estimation'
+    panorama_depth_estimation = 'panorama-depth-estimation'
     portrait_matting = 'portrait-matting'
+    universal_matting = 'universal-matting'
     text_driven_segmentation = 'text-driven-segmentation'
     shop_segmentation = 'shop-segmentation'
     hand_static = 'hand-static'
     face_human_hand_detection = 'face-human-hand-detection'
     face_emotion = 'face-emotion'
     product_segmentation = 'product-segmentation'
+    image_matching = 'image-matching'
+    image_quality_assessment_degradation = 'image-quality-assessment-degradation'
 
     crowd_counting = 'crowd-counting'
 
     # image editing
     skin_retouching = 'skin-retouching'
     image_super_resolution = 'image-super-resolution'
+    image_debanding = 'image-debanding'
     image_colorization = 'image-colorization'
     image_color_enhancement = 'image-color-enhancement'
     image_denoising = 'image-denoising'
+    image_deblurring = 'image-deblurring'
     image_portrait_enhancement = 'image-portrait-enhancement'
     image_inpainting = 'image-inpainting'
+    image_paintbyexample = 'image-paintbyexample'
+    image_skychange = 'image-skychange'
+    image_demoireing = 'image-demoireing'
+    image_editing = 'image-editing'
 
     # image generation
     image_to_image_translation = 'image-to-image-translation'
@@ -69,8 +94,12 @@ class CVTasks(object):
     image_portrait_stylization = 'image-portrait-stylization'
     image_body_reshaping = 'image-body-reshaping'
     image_embedding = 'image-embedding'
-
+    image_face_fusion = 'image-face-fusion'
     product_retrieval_embedding = 'product-retrieval-embedding'
+    controllable_image_generation = 'controllable-image-generation'
+    text_to_360panorama_image = 'text-to-360panorama-image'
+    image_try_on = 'image-try-on'
+    human_image_generation = 'human-image-generation'
 
     # video recognition
     live_category = 'live-category'
@@ -80,20 +109,67 @@ class CVTasks(object):
     video_embedding = 'video-embedding'
     virtual_try_on = 'virtual-try-on'
     movie_scene_segmentation = 'movie-scene-segmentation'
+    language_guided_video_summarization = 'language-guided-video-summarization'
+    vop_retrieval = 'video-text-retrieval'
 
     # video segmentation
+    video_object_segmentation = 'video-object-segmentation'
     referring_video_object_segmentation = 'referring-video-object-segmentation'
+    video_human_matting = 'video-human-matting'
+    video_panoptic_segmentation = 'video-panoptic-segmentation'
+    video_instance_segmentation = 'video-instance-segmentation'
 
     # video editing
     video_inpainting = 'video-inpainting'
+    video_frame_interpolation = 'video-frame-interpolation'
+    video_stabilization = 'video-stabilization'
+    video_super_resolution = 'video-super-resolution'
+    video_deinterlace = 'video-deinterlace'
+    video_colorization = 'video-colorization'
 
     # reid and tracking
     video_single_object_tracking = 'video-single-object-tracking'
+    video_multi_object_tracking = 'video-multi-object-tracking'
     video_summarization = 'video-summarization'
     image_reid_person = 'image-reid-person'
 
+    # pointcloud task
+    pointcloud_sceneflow_estimation = 'pointcloud-sceneflow-estimation'
+    # image multi-view depth estimation
+    image_multi_view_depth_estimation = 'image-multi-view-depth-estimation'
+
+    # domain specific object detection
+    domain_specific_object_detection = 'domain-specific-object-detection'
+
+    # content check
+    content_check = 'content-check'
+
+    # 3d face reconstruction
+    face_reconstruction = 'face-reconstruction'
+
+    # 3d human reconstruction
+    human_reconstruction = 'human-reconstruction'
+
+    # image quality assessment mos
+    image_quality_assessment_mos = 'image-quality-assessment-mos'
+    # motion generation
+    motion_generation = 'motion-generation'
+    # 3d reconstruction
+    nerf_recon_acc = 'nerf-recon-acc'
+    nerf_recon_4k = 'nerf-recon-4k'
+    nerf_recon_vq_compression = 'nerf-recon-vq-compression'
+    surface_recon_common = 'surface-recon-common'
+
+    # vision efficient tuning
+    vision_efficient_tuning = 'vision-efficient-tuning'
+
+    # bad image detecting
+    bad_image_detecting = 'bad-image-detecting'
+
 
 class NLPTasks(object):
+    # chat
+    chat = 'chat'
     # nlp tasks
     word_segmentation = 'word-segmentation'
     part_of_speech = 'part-of-speech'
@@ -108,9 +184,12 @@ class NLPTasks(object):
     relation_extraction = 'relation-extraction'
     zero_shot = 'zero-shot'
     translation = 'translation'
+    competency_aware_translation = 'competency-aware-translation'
     token_classification = 'token-classification'
+    transformer_crf = 'transformer-crf'
     conversational = 'conversational'
     text_generation = 'text-generation'
+    fid_dialogue = 'fid-dialogue'
     text2text_generation = 'text2text-generation'
     task_oriented_conversation = 'task-oriented-conversation'
     dialog_intent_prediction = 'dialog-intent-prediction'
@@ -119,13 +198,25 @@ class NLPTasks(object):
     fill_mask = 'fill-mask'
     text_summarization = 'text-summarization'
     question_answering = 'question-answering'
+    code_translation = 'code-translation'
+    code_generation = 'code-generation'
     zero_shot_classification = 'zero-shot-classification'
     backbone = 'backbone'
     text_error_correction = 'text-error-correction'
+    word_alignment = 'word-alignment'
     faq_question_answering = 'faq-question-answering'
     information_extraction = 'information-extraction'
     document_segmentation = 'document-segmentation'
+    extractive_summarization = 'extractive-summarization'
     feature_extraction = 'feature-extraction'
+    translation_evaluation = 'translation-evaluation'
+    sudoku = 'sudoku'
+    text2sql = 'text2sql'
+    siamese_uie = 'siamese-uie'
+    document_grounded_dialog_retrieval = 'document-grounded-dialog-retrieval'
+    document_grounded_dialog_rerank = 'document-grounded-dialog-rerank'
+    document_grounded_dialog_generate = 'document-grounded-dialog-generate'
+    machine_reading_comprehension = 'machine-reading-comprehension'
 
 
 class AudioTasks(object):
@@ -133,9 +224,20 @@ class AudioTasks(object):
     auto_speech_recognition = 'auto-speech-recognition'
     text_to_speech = 'text-to-speech'
     speech_signal_process = 'speech-signal-process'
+    speech_separation = 'speech-separation'
     acoustic_echo_cancellation = 'acoustic-echo-cancellation'
     acoustic_noise_suppression = 'acoustic-noise-suppression'
     keyword_spotting = 'keyword-spotting'
+    inverse_text_processing = 'inverse-text-processing'
+    punctuation = 'punctuation'
+    speaker_verification = 'speaker-verification'
+    speech_language_recognition = 'speech-language-recognition'
+    speaker_diarization = 'speaker-diarization'
+    voice_activity_detection = 'voice-activity-detection'
+    language_score_prediction = 'language-score-prediction'
+    speech_timestamp = 'speech-timestamp'
+    speaker_diarization_dialogue_detection = 'speaker-diarization-dialogue-detection'
+    speaker_diarization_semantic_speaker_turn_detection = 'speaker-diarization-semantic-speaker-turn-detection'
 
 
 class MultiModalTasks(object):
@@ -144,12 +246,22 @@ class MultiModalTasks(object):
     visual_grounding = 'visual-grounding'
     text_to_image_synthesis = 'text-to-image-synthesis'
     multi_modal_embedding = 'multi-modal-embedding'
+    text_video_retrieval = 'text-video-retrieval'
     generative_multi_modal_embedding = 'generative-multi-modal-embedding'
     multi_modal_similarity = 'multi-modal-similarity'
     visual_question_answering = 'visual-question-answering'
     visual_entailment = 'visual-entailment'
     video_multi_modal_embedding = 'video-multi-modal-embedding'
     image_text_retrieval = 'image-text-retrieval'
+    document_vl_embedding = 'document-vl-embedding'
+    video_captioning = 'video-captioning'
+    video_question_answering = 'video-question-answering'
+    video_temporal_grounding = 'video-temporal-grounding'
+    text_to_video_synthesis = 'text-to-video-synthesis'
+    efficient_diffusion_tuning = 'efficient-diffusion-tuning'
+    multimodal_dialogue = 'multimodal-dialogue'
+    image_to_video = 'image-to-video'
+    video_to_video = 'video-to-video'
 
 
 class ScienceTasks(object):
@@ -170,6 +282,7 @@ class TasksIODescriptions(object):
     visual_question_answering = 'visual_question_answering',
     visual_entailment = 'visual_entailment',
     generative_multi_modal_embedding = 'generative_multi_modal_embedding'
+    efficient_diffusion_tuning = 'efficient_diffusion_tuning'
 
 
 class Tasks(CVTasks, NLPTasks, AudioTasks, MultiModalTasks, ScienceTasks):
@@ -179,6 +292,7 @@ class Tasks(CVTasks, NLPTasks, AudioTasks, MultiModalTasks, ScienceTasks):
     This should be used to register models, pipelines, trainers.
     """
     reverse_field_index = {}
+    task_template = 'task-template'
 
     @staticmethod
     def find_field_by_task(task_name):
@@ -229,6 +343,7 @@ class Hubs(enum.Enum):
     """
     modelscope = 'modelscope'
     huggingface = 'huggingface'
+    virgo = 'virgo'
 
 
 class DownloadMode(enum.Enum):
@@ -264,6 +379,8 @@ class DatasetFormations(enum.Enum):
     # native modelscope formation that supports, among other things,
     # multiple files in a dataset
     native = 2
+    # for local meta cache mark
+    formation_mark_ext = '.formation_mark'
 
 
 DatasetMetaFormats = {
@@ -285,7 +402,27 @@ class ModelFile(object):
     ONNX_MODEL_FILE = 'model.onnx'
     LABEL_MAPPING = 'label_mapping.json'
     TRAIN_OUTPUT_DIR = 'output'
+    TRAIN_BEST_OUTPUT_DIR = 'output_best'
     TS_MODEL_FILE = 'model.ts'
+    YAML_FILE = 'model.yaml'
+    TOKENIZER_FOLDER = 'tokenizer'
+    CONFIG = 'config.json'
+
+
+class Invoke(object):
+    KEY = 'invoked_by'
+    PRETRAINED = 'from_pretrained'
+    PIPELINE = 'pipeline'
+    TRAINER = 'trainer'
+    LOCAL_TRAINER = 'local_trainer'
+    PREPROCESSOR = 'preprocessor'
+
+
+class ThirdParty(object):
+    KEY = 'third_party'
+    EASYCV = 'easycv'
+    ADASEQ = 'adaseq'
+    ADADET = 'adadet'
 
 
 class ConfigFields(object):
@@ -333,6 +470,7 @@ MASTER_MODEL_BRANCH = 'master'
 DEFAULT_REPOSITORY_REVISION = 'master'
 DEFAULT_DATASET_REVISION = 'master'
 DEFAULT_DATASET_NAMESPACE = 'modelscope'
+DEFAULT_DATA_ACCELERATION_ENDPOINT = 'https://oss-accelerate.aliyuncs.com'
 
 
 class ModeKeys:
@@ -354,7 +492,9 @@ class LogKeys:
 
 
 class TrainerStages:
+    after_init = 'after_init'
     before_run = 'before_run'
+    before_val = 'before_val'
     before_train_epoch = 'before_train_epoch'
     before_train_iter = 'before_train_iter'
     after_train_iter = 'after_train_iter'
@@ -364,6 +504,7 @@ class TrainerStages:
     after_val_iter = 'after_val_iter'
     after_val_epoch = 'after_val_epoch'
     after_run = 'after_run'
+    after_val = 'after_val'
 
 
 class ColorCodes:
@@ -378,3 +519,76 @@ class Devices:
     """device used for training and inference"""
     cpu = 'cpu'
     gpu = 'gpu'
+
+
+# Supported extensions for text datasets.
+EXTENSIONS_TO_LOAD = {
+    'csv': 'csv',
+    'tsv': 'csv',
+    'json': 'json',
+    'jsonl': 'json',
+    'parquet': 'parquet',
+    'txt': 'text'
+}
+
+META_FILES_FORMAT = ('.csv', '.jsonl')
+
+
+class DatasetPathName:
+    META_NAME = 'meta'
+    DATA_FILES_NAME = 'data_files'
+    LOCK_FILE_NAME_ANY = 'any'
+    LOCK_FILE_NAME_DELIMITER = '-'
+
+
+class MetaDataFields:
+    ARGS_BIG_DATA = 'big_data'
+
+
+DatasetVisibilityMap = {1: 'private', 3: 'internal', 5: 'public'}
+
+
+class DistributedParallelType(object):
+    """Parallel Strategies for Distributed Models"""
+    DP = 'data_parallel'
+    TP = 'tensor_model_parallel'
+    PP = 'pipeline_model_parallel'
+
+
+class DatasetTensorflowConfig:
+    BATCH_SIZE = 'batch_size'
+    DEFAULT_BATCH_SIZE_VALUE = 5
+
+
+class VirgoDatasetConfig:
+
+    default_virgo_namespace = 'default_namespace'
+
+    default_dataset_version = '1'
+
+    env_virgo_endpoint = 'VIRGO_ENDPOINT'
+
+    # Columns for meta request
+    meta_content = 'metaContent'
+    sampling_type = 'samplingType'
+
+    # Columns for meta content
+    col_id = 'id'
+    col_meta_info = 'meta_info'
+    col_analysis_result = 'analysis_result'
+    col_external_info = 'external_info'
+    col_cache_file = 'cache_file'
+
+
+DEFAULT_MAXCOMPUTE_ENDPOINT = 'http://service-corp.odps.aliyun-inc.com/api'
+
+
+class MaxComputeEnvs:
+
+    ACCESS_ID = 'ODPS_ACCESS_ID'
+
+    ACCESS_SECRET_KEY = 'ODPS_ACCESS_SECRET_KEY'
+
+    PROJECT_NAME = 'ODPS_PROJECT_NAME'
+
+    ENDPOINT = 'ODPS_ENDPOINT'

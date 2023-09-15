@@ -19,18 +19,27 @@ from .builder import METRICS, MetricKeys
 class SequenceClassificationMetric(Metric):
     """The metric computation class for sequence classification tasks.
 
-    This metric class calculates accuracy of the whole input batches.
+    This metric class calculates accuracy/F1 of all the input batches.
+
+    Args:
+        label_name: The key of label column in the 'inputs' arg.
+        logit_name: The key of logits column in the 'inputs' arg.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self,
+                 label_name=OutputKeys.LABELS,
+                 logit_name=OutputKeys.LOGITS,
+                 *args,
+                 **kwargs):
         super().__init__(*args, **kwargs)
         self.preds = []
         self.labels = []
+        self.label_name = label_name
+        self.logit_name = logit_name
 
     def add(self, outputs: Dict, inputs: Dict):
-        label_name = OutputKeys.LABEL if OutputKeys.LABEL in inputs else OutputKeys.LABELS
-        ground_truths = inputs[label_name]
-        eval_results = outputs[OutputKeys.LOGITS]
+        ground_truths = inputs[self.label_name]
+        eval_results = outputs[self.logit_name]
         self.preds.append(
             torch_nested_numpify(torch_nested_detach(eval_results)))
         self.labels.append(
@@ -39,14 +48,37 @@ class SequenceClassificationMetric(Metric):
     def evaluate(self):
         preds = np.concatenate(self.preds, axis=0)
         labels = np.concatenate(self.labels, axis=0)
-        preds = np.argmax(preds, axis=1)
-        return {
-            MetricKeys.ACCURACY:
-            accuracy_score(labels, preds),
-            MetricKeys.F1:
-            f1_score(
-                labels,
-                preds,
-                average='micro' if any([label > 1
-                                        for label in labels]) else None),
-        }
+        assert len(preds.shape) == 2, 'Only support predictions with shape: (batch_size, num_labels),' \
+                                      'multi-label classification is not supported in this metric class.'
+        preds_max = np.argmax(preds, axis=1)
+        if preds.shape[1] > 2:
+            metrics = {
+                MetricKeys.ACCURACY: accuracy_score(labels, preds_max),
+                MetricKeys.Micro_F1:
+                f1_score(labels, preds_max, average='micro'),
+                MetricKeys.Macro_F1:
+                f1_score(labels, preds_max, average='macro'),
+            }
+
+            metrics[MetricKeys.F1] = metrics[MetricKeys.Micro_F1]
+            return metrics
+        else:
+            metrics = {
+                MetricKeys.ACCURACY:
+                accuracy_score(labels, preds_max),
+                MetricKeys.Binary_F1:
+                f1_score(labels, preds_max, average='binary'),
+            }
+            metrics[MetricKeys.F1] = metrics[MetricKeys.Binary_F1]
+            return metrics
+
+    def merge(self, other: 'SequenceClassificationMetric'):
+        self.preds.extend(other.preds)
+        self.labels.extend(other.labels)
+
+    def __getstate__(self):
+        return self.preds, self.labels, self.label_name, self.logit_name
+
+    def __setstate__(self, state):
+        self.__init__()
+        self.preds, self.labels, self.label_name, self.logit_name = state

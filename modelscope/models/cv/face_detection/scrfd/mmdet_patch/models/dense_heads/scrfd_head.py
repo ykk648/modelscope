@@ -1,5 +1,5 @@
 """
-The implementation here is modified based on insightface, originally MIT license and publicly avaialbe at
+The implementation here is modified based on insightface, originally MIT license and publicly available at
 https://github.com/deepinsight/insightface/tree/master/detection/scrfd/mmdet/models/dense_heads/scrfd_head.py
 """
 import numpy as np
@@ -83,6 +83,7 @@ class SCRFDHead(AnchorHead):
         reg_max (int): Max value of integral set :math: `{0, ..., reg_max}`
             in QFL setting. Default: 16.
     Example:
+
         >>> self = GFLHead(11, 7)
         >>> feats = [torch.rand(1, 7, s, s) for s in [4, 8, 16, 32, 64]]
         >>> cls_quality_score, bbox_pred = self.forward(feats)

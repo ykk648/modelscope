@@ -11,11 +11,11 @@ from zhconv import convert
 from modelscope.utils.constant import ModeKeys
 from .base import OfaBasePreprocessor
 
-IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
-
 
 def ocr_resize(img, patch_image_size, is_document=False):
+    r"""
+    Image resize function for OCR tasks.
+    """
     img = img.convert('RGB')
     width, height = img.size
 
@@ -57,6 +57,9 @@ def ocr_resize(img, patch_image_size, is_document=False):
 
 
 class OfaOcrRecognitionPreprocessor(OfaBasePreprocessor):
+    r"""
+    OFA preprocessor for OCR recognition tasks.
+    """
 
     def __init__(self,
                  cfg,
@@ -90,6 +93,24 @@ class OfaOcrRecognitionPreprocessor(OfaBasePreprocessor):
             return self._build_infer_sample(data)
 
     def _build_train_sample(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        r"""
+        Building training samples.
+
+        step 1. Preprocess the data using the logic of `_build_infer_sample`
+            and make sure the label data in the result.
+        step 2. Preprocess the label data. Contains:
+            - do tripe to the label value.
+            - tokenize the label as `target` value without `bos` token.
+            - add `bos` token and remove `eos` token of `target` as `prev_output_tokens`.
+
+        Args:
+            data (`Dict[str, Any]`): Input data, should contains the key of `image`, `prompt` and `label`,
+                the former refers the image input data, and the later refers the text input data
+                the `label` is the supervised data for training.
+        Return:
+            A dict object, contains source, image, mask, label, target tokens,
+            and previous output tokens data.
+        """
         sample = self._build_infer_sample(data)
         target = sample['label']
         target_token_list = target.strip().split()
@@ -100,6 +121,21 @@ class OfaOcrRecognitionPreprocessor(OfaBasePreprocessor):
         return sample
 
     def _build_infer_sample(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        r"""
+        Building inference samples.
+
+        step 1. Get the pillow image.
+        step 2. Do some transforms for the pillow image as the image input,
+            such as resize, normalize, to tensor etc.
+        step 3. Tokenize the prompt as text input.
+        step 4. Determine Whether or not to add labels to the sample.
+
+        Args:
+            data (`Dict[str, Any]`): Input data, should contains the key of `image` and `prompt`,
+                the former refers the image input data, and the later refers the text input data.
+        Return:
+            A dict object, contains source, image, image patch mask and label data.
+        """
         image = self.get_img_pil(data[self.column_map['image']])
         patch_image = self.patch_resize_transform(image)
         prompt = self.cfg.model.get('prompt', '图片上的文字是什么?')
@@ -112,6 +148,6 @@ class OfaOcrRecognitionPreprocessor(OfaBasePreprocessor):
         }
         if 'text' in self.column_map and self.column_map['text'] in data:
             target = data[self.column_map['text']]
-            target = unicodedata2.normalize('NFKC', convert(target, 'zh-hans'))
-            sample['label'] = target
+            sample['label'] = unicodedata2.normalize(
+                'NFKC', convert(target, 'zh-hans'))
         return sample

@@ -1,3 +1,5 @@
+# Copyright (c) Alibaba, Inc. and its affiliates.
+
 from modelscope.utils.constant import Tasks
 
 OFA_TASK_KEY_MAPPING = {
@@ -9,5 +11,8 @@ OFA_TASK_KEY_MAPPING = {
     Tasks.visual_grounding: ['image', 'text'],
     Tasks.visual_question_answering: ['image', 'text'],
     Tasks.visual_entailment: ['image', 'text', 'text2'],
-    Tasks.text_to_image_synthesis: ['text']
+    Tasks.text_to_image_synthesis: ['text'],
+    Tasks.auto_speech_recognition: ['wav', 'text'],
+    Tasks.sudoku: ['text'],
+    Tasks.text2sql: ['text', 'database'],
 }

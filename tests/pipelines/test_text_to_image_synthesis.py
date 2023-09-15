@@ -8,11 +8,10 @@ from modelscope.models import Model
 from modelscope.outputs import OutputKeys
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
-from modelscope.utils.demo_utils import DemoCompatibilityCheck
 from modelscope.utils.test_utils import test_level
 
 
-class TextToImageSynthesisTest(unittest.TestCase, DemoCompatibilityCheck):
+class TextToImageSynthesisTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.task = Tasks.text_to_image_synthesis
@@ -32,7 +31,7 @@ class TextToImageSynthesisTest(unittest.TestCase, DemoCompatibilityCheck):
         pipe_line_text_to_image_synthesis = pipeline(
             task=Tasks.text_to_image_synthesis, model=model)
         img = pipe_line_text_to_image_synthesis(
-            self.test_text)[OutputKeys.OUTPUT_IMG]
+            self.test_text)[OutputKeys.OUTPUT_IMGS][0]
         print(np.sum(np.abs(img)))
 
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
@@ -40,7 +39,7 @@ class TextToImageSynthesisTest(unittest.TestCase, DemoCompatibilityCheck):
         pipe_line_text_to_image_synthesis = pipeline(
             task=Tasks.text_to_image_synthesis, model=self.model_id)
         img = pipe_line_text_to_image_synthesis(
-            self.test_text)[OutputKeys.OUTPUT_IMG]
+            self.test_text)[OutputKeys.OUTPUT_IMGS][0]
         print(np.sum(np.abs(img)))
 
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
@@ -48,12 +47,18 @@ class TextToImageSynthesisTest(unittest.TestCase, DemoCompatibilityCheck):
         pipe_line_text_to_image_synthesis = pipeline(
             task=Tasks.text_to_image_synthesis)
         img = pipe_line_text_to_image_synthesis(
-            self.test_text)[OutputKeys.OUTPUT_IMG]
+            self.test_text)[OutputKeys.OUTPUT_IMGS][0]
         print(np.sum(np.abs(img)))
 
-    @unittest.skip('demo compatibility test is only enabled on a needed-basis')
-    def test_demo_compatibility(self):
-        self.compatibility_check()
+    @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
+    def test_run_with_model_from_modelhub_dpm_solver(self):
+        self.test_text.update({'solver': 'dpm-solver'})
+        model = Model.from_pretrained(self.model_id)
+        pipe_line_text_to_image_synthesis = pipeline(
+            task=Tasks.text_to_image_synthesis, model=model)
+        img = pipe_line_text_to_image_synthesis(
+            self.test_text)[OutputKeys.OUTPUT_IMGS][0]
+        print(np.sum(np.abs(img)))
 
 
 if __name__ == '__main__':

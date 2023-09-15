@@ -10,7 +10,7 @@ We use the following toolsseed isortseed isortseed isort for linting and formatt
 
 Style configurations of yapf and isort can be found in [setup.cfg](../../setup.cfg).
 We use [pre-commit hook](https://pre-commit.com/) that checks and formats for `flake8`, `yapf`, `seed-isort-config`, `isort`, `trailing whitespaces`,
-fixes `end-of-files`, sorts `requirments.txt` automatically on every commit.
+fixes `end-of-files`, sorts `requirements.txt` automatically on every commit.
 The config for a pre-commit hook is stored in [.pre-commit-config](../../.pre-commit-config.yaml).
 After you clone the repository, you will need to install initialize pre-commit hook.
 ```bash
@@ -81,7 +81,7 @@ exists in the environment and unset it.
 python tests/path/to/your_test.py
 ```
 
-2. Remember to run core tests in local environment before start a codereview, by default it will
+2. Remember to run core tests in local environment before start a code review, by default it will
 only run test cases with level 0.
 ```bash
 make tests
@@ -104,9 +104,9 @@ git lfs install
 ```
 
 for centos, please download rpm from git-lfs github release [website](https://github.com/git-lfs/git-lfs/releases/tag/v3.2.0)
+and then execute
 ```bash
-wget http://101374-public.oss-cn-hangzhou-zmf.aliyuncs.com/git-lfs-3.2.0-1.el7.x86_64.rpm
-sudo rpm -ivh git-lfs-3.2.0-1.el7.x86_64.rpm
+sudo rpm -ivh your_rpm_file_name.rpm
 git lfs install
 ```
 
@@ -117,25 +117,35 @@ sudo apt-get install git-lfs
 git lfs install
 ```
 
-2. track your data type using git lfs, for example, to track png files
-```bash
+2. We use a public read model repository from ModelScope to store test data. The repository has been added by default as a submodule with the path data/test. To clone it, use the following command:
+```shell
+git clone git@github.com:modelscope/modelscope.git --recursive
+```
+
+3. Each time you add new data, go to the data/test directory (note that you are now in the submodule's git directory), check if you are on the master branch, and pull the latest master branch:
+```shell
+git branch
+git checkout master
+git pull origin master
+```
+
+4. Track your new test data type, and update and commit the new files on the master branch:
+```shell
+cd data/test/
 git lfs track "*.png"
+git add test.png
+git commit -m "add test.png"
+git push origin master
 ```
 
-3. add your test files to `data/test/` folder, you can make directories if you need.
-```bash
-git add data/test/test.png
+5. Return to the modelscope directory and commit the submodule update:
+```shell
+cd ../../
+git add data/test
+git commit -m "update test data"
 ```
 
-4. commit your test data to remote branch
-```bash
-git commit -m "xxx"
-```
-
-To pull data from remote repo, just as the same way you pull git files.
-```bash
-git pull origin branch_name
-```
+Note: By default, we grant write permissions to all members of the ModelScope organization. If you encounter any permission issues, please send an email to ModelScope's official email address ([contact@modelscope.cn](contact@modelscope.cn)), and a dedicated person will contact you via email.
 
 
 
@@ -144,7 +154,7 @@ git pull origin branch_name
 1. Get the latest master code and checkout a new branch for local development.
     ```shell
     git pull origin master --rebase
-    git checout -b dev/my-dev-branch
+    git checkout -b dev/my-dev-branch
     ```
    note: replace "dev/my-dev-branch" with a meaningful branch name. We recommend using a new dev branch for every change.
 2. Make your local changes.
@@ -153,7 +163,7 @@ git pull origin branch_name
     git add .
     git commit -m "[to #42322933] my commit message"
     ```
-   note: you may replace [to #42322933]  with your own aone issue id (if any).
+   note: you may replace [to #42322933]  with your own alone issue id (if any).
 4. Push your change:
    ```shell
     git push --set-upstream origin dev/my-dev-branch

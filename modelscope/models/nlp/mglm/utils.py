@@ -21,23 +21,14 @@ import time
 import json
 import numpy as np
 import torch
-
-from . import mpu
-from .fp16 import FP16_Optimizer
+from megatron_util import mpu, print_rank_0
+from megatron_util.fp16 import FP16_Optimizer
 
 SUMMARY_WRITER_DIR_NAME = 'runs'
 
 
 def get_log_dir(name, base):
     return os.path.join(base, SUMMARY_WRITER_DIR_NAME, name)
-
-
-def print_rank_0(message):
-    if torch.distributed.is_initialized():
-        if torch.distributed.get_rank() == 0:
-            print(message, flush=True)
-    else:
-        print(message, flush=True)
 
 
 def get_hostname():
@@ -77,7 +68,7 @@ def print_and_save_args(args, verbose=True, log_dir=None):
         with open(json_file, 'w') as output:
             json.dump(vars(args), output, sort_keys=True)
         if args.deepspeed and args.deepspeed_config is not None:
-            with open(args.deepspeed_config) as file:
+            with open(args.deepspeed_config, encoding='utf-8') as file:
                 deepspeed_config = json.load(file)
             deepspeed_json_file = os.path.join(log_dir,
                                                'config_gpt_large.json')
@@ -324,7 +315,7 @@ def get_checkpoint_iteration(load_path):
         print_rank_0('    will not load any checkpoints and will start from '
                      'random')
         return load_path, 0, False, False
-    with open(tracker_filename, 'r') as f:
+    with open(tracker_filename, 'r', encoding='utf-8') as f:
         metastring = f.read().strip()
         release = metastring == 'release'
         # try:

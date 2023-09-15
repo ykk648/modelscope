@@ -4,37 +4,30 @@ from typing import TYPE_CHECKING
 from modelscope.utils.import_utils import LazyImportModule
 
 if TYPE_CHECKING:
-    from .information_extraction import InformationExtractionModel
-    from .feature_extraction import FeatureExtractionModel
-    from .fill_mask import FillMaskModel
-    from .nncrf_for_named_entity_recognition import (
-        LSTMCRFForNamedEntityRecognition,
-        TransformerCRFForNamedEntityRecognition,
-    )
-    from .nncrf_for_word_segmentation import (
-        LSTMCRFForWordSegmentation,
-        TransformerCRFForWordSegmentation,
-    )
-    from .sequence_classification import SequenceClassificationModel
+    from .information_extraction import ModelForInformationExtraction
+    from .feature_extraction import ModelForFeatureExtraction
+    from .fill_mask import ModelForFillMask
+    from .text_classification import ModelForTextClassification
     from .task_model import SingleBackboneTaskModelBase
-    from .token_classification import TokenClassificationModel
-    from .text_generation import TaskModelForTextGeneration
+    from .token_classification import (ModelForTokenClassification,
+                                       ModelForTokenClassificationWithCRF)
+    from .text_generation import ModelForTextGeneration
+    from .text_ranking import ModelForTextRanking
+    from .machine_reading_comprehension import ModelForMachineReadingComprehension
 
 else:
     _import_structure = {
-        'information_extraction': ['InformationExtractionModel'],
-        'feature_extraction': ['FeatureExtractionModel'],
-        'fill_mask': ['FillMaskModel'],
-        'nncrf_for_named_entity_recognition': [
-            'TransformerCRFForNamedEntityRecognition',
-            'LSTMCRFForNamedEntityRecognition'
-        ],
-        'nncrf_for_word_segmentation':
-        ['TransformerCRFForWordSegmentation', 'LSTMCRFForWordSegmentation'],
-        'sequence_classification': ['SequenceClassificationModel'],
+        'information_extraction': ['ModelForInformationExtraction'],
+        'feature_extraction': ['ModelForFeatureExtraction'],
+        'fill_mask': ['ModelForFillMask'],
+        'text_classification': ['ModelForTextClassification'],
         'task_model': ['SingleBackboneTaskModelBase'],
-        'token_classification': ['TokenClassificationModel'],
-        'text_generation': ['TaskModelForTextGeneration'],
+        'token_classification':
+        ['ModelForTokenClassification', 'ModelForTokenClassificationWithCRF'],
+        'text_generation': ['ModelForTextGeneration'],
+        'text_ranking': ['ModelForTextRanking'],
+        'machine_reading_comprehension':
+        ['ModelForMachineReadingComprehension'],
     }
 
     import sys

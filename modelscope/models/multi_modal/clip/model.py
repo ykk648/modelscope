@@ -509,8 +509,8 @@ def convert_weights(model: nn.Module):
 @MODELS.register_module(Tasks.multi_modal_embedding, module_name=Models.clip)
 class CLIPForMultiModalEmbedding(TorchModel):
 
-    def __init__(self, model_dir, device_id=-1):
-        super().__init__(model_dir=model_dir, device_id=device_id)
+    def __init__(self, model_dir, *args, **kwargs):
+        super().__init__(model_dir=model_dir, *args, **kwargs)
 
         # Initialize the model.
         vision_model_config_file = '{}/vision_model_config.json'.format(
@@ -523,8 +523,10 @@ class CLIPForMultiModalEmbedding(TorchModel):
         logger.info(f'Loading text model config from {text_model_config_file}')
         assert os.path.exists(text_model_config_file)
 
-        with open(vision_model_config_file,
-                  'r') as fv, open(text_model_config_file, 'r') as ft:
+        with open(
+                vision_model_config_file, 'r',
+                encoding='utf-8') as fv,\
+                open(text_model_config_file, 'r', encoding='utf-8') as ft:
             self.model_info = json.load(fv)
             for k, v in json.load(ft).items():
                 self.model_info[k] = v
@@ -576,7 +578,7 @@ class CLIPForMultiModalEmbedding(TorchModel):
 
             with torch.autograd.set_grad_enabled(mode == ModeKeys.TRAIN):
                 image_features = self.clip_model.encode_image(image_tensor)
-                image_features /= image_features.norm(
+                image_features = image_features / image_features.norm(
                     dim=-1, keepdim=True)  # l2-normalize
 
             output[OutputKeys.IMG_EMBEDDING] = image_features
@@ -588,7 +590,7 @@ class CLIPForMultiModalEmbedding(TorchModel):
 
             with torch.autograd.set_grad_enabled(mode == ModeKeys.TRAIN):
                 text_features = self.clip_model.encode_text(text_tensor)
-                text_features /= text_features.norm(
+                text_features = text_features / text_features.norm(
                     dim=-1, keepdim=True)  # l2-normalize
             output[OutputKeys.TEXT_EMBEDDING] = text_features
 

@@ -29,7 +29,7 @@ from modelscope.utils.constant import Tasks
 from .backbone import SbertModel, SbertPreTrainedModel
 from .configuration import SbertConfig
 
-logger = logging.get_logger(__name__)
+logger = logging.get_logger()
 
 
 class SbertPredictionHeadTransform(nn.Module):
@@ -105,7 +105,7 @@ class SbertForMaskedLM(SbertPreTrainedModel):
 
     Preprocessor:
         This is the fill_mask model of StructBERT, the preprocessor of this model
-        is `modelscope.preprocessors.NLPPreprocessor`.
+        is `modelscope.preprocessors.FillMaskTransformersPreprocessor`.
 
     Parameters:
         config (:class:`~modelscope.models.nlp.structbert.SbertConfig`): Model configuration class with
@@ -156,66 +156,68 @@ class SbertForMaskedLM(SbertPreTrainedModel):
     ):
         r"""
         Args:
-        input_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`):
-            Indices of input sequence tokens in the vocabulary.
+            input_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`):
+                Indices of input sequence tokens in the vocabulary.
 
-            Indices can be obtained using :class:`~modelscope.models.nlp.structbert.SbertTokenizer`. See
-            :meth:`transformers.PreTrainedTokenizer.encode` and :meth:`transformers.PreTrainedTokenizer.__call__` for
-            details.
+                Indices can be obtained using :class:`~modelscope.models.nlp.structbert.SbertTokenizer`. See
+                :meth:`transformers.PreTrainedTokenizer.encode` and :meth:`transformers.PreTrainedTokenizer.__call__`
+                for details.
 
-            `What are input IDs? <../glossary.html#input-ids>`__
+                `What are input IDs? <../glossary.html#input-ids>`__
 
-        attention_mask (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
-            Mask to avoid performing attention on padding token indices. Mask values selected in ``[0, 1]``:
+            attention_mask (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
+                Mask to avoid performing attention on padding token indices. Mask values selected in ``[0, 1]``:
 
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
+                - 1 for tokens that are **not masked**,
+                - 0 for tokens that are **masked**.
 
-            `What are attention masks? <../glossary.html#attention-mask>`__
+                `What are attention masks? <../glossary.html#attention-mask>`__
 
-        token_type_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
-            Segment token indices to indicate first and second portions of the inputs. Indices are selected in ``[0,
-            1]``:
+            token_type_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
+                Segment token indices to indicate first and second portions of the inputs. Indices are selected in ``[0,
+                1]``:
 
-            - 0 corresponds to a `sentence A` token,
-            - 1 corresponds to a `sentence B` token.
+                - 0 corresponds to a `sentence A` token,
+                - 1 corresponds to a `sentence B` token.
 
-            `What are token type IDs? <../glossary.html#token-type-ids>`_
-        position_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
-            Indices of positions of each input sequence tokens in the position embeddings. Selected in the range ``[0,
-            config.max_position_embeddings - 1]``.
+                `What are token type IDs? <../glossary.html#token-type-ids>`_
+            position_ids (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
+                Indices of positions of each input sequence tokens in the position embeddings. Selected in the range
+                ``[0, config.max_position_embeddings - 1]``.
 
-        head_mask (:obj:`torch.FloatTensor` of shape :obj:`(num_heads,)` or :obj:`(num_layers, num_heads)`, `optional`):
-            Mask to nullify selected heads of the self-attention modules. Mask values selected in ``[0, 1]``:
+            head_mask (:obj:`torch.FloatTensor` of shape :obj:`(num_heads,)` or :obj:`(num_layers, num_heads)`,
+                `optional`):
+                Mask to nullify selected heads of the self-attention modules. Mask values selected in ``[0, 1]``:
 
-            - 1 indicates the head is **not masked**,
-            - 0 indicates the head is **masked**.
+                - 1 indicates the head is **not masked**,
+                - 0 indicates the head is **masked**.
 
-        inputs_embeds (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
-            Optionally, instead of passing :obj:`input_ids` you can choose to directly pass an embedded representation.
-            This is useful if you want more control over how to convert :obj:`input_ids` indices into associated
-            vectors than the model's internal embedding lookup matrix.
-        output_attentions (:obj:`bool`, `optional`):
-            Whether or not to return the attentions tensors of all attention layers. See ``attentions`` under returned
-            tensors for more detail.
-        output_hidden_states (:obj:`bool`, `optional`):
-            Whether or not to return the hidden states of all layers. See ``hidden_states`` under returned tensors for
-            more detail.
-        return_dict (:obj:`bool`, `optional`):
-            Whether or not to return a :class:`~transformers.ModelOutput` instead of a plain tuple.
-        labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
-            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
-            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
-            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
+            inputs_embeds (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`,
+                `optional`):
+                Optionally, instead of passing :obj:`input_ids` you can choose to directly pass an embedded
+                representation. This is useful if you want more control over how to convert :obj:`input_ids` indices
+                into associated vectors than the model's internal embedding lookup matrix.
+            output_attentions (:obj:`bool`, `optional`):
+                Whether or not to return the attentions tensors of all attention layers. See ``attentions`` under
+                returned tensors for more detail.
+            output_hidden_states (:obj:`bool`, `optional`):
+                Whether or not to return the hidden states of all layers. See ``hidden_states`` under returned tensors
+                for more detail.
+            return_dict (:obj:`bool`, `optional`):
+                Whether or not to return a :class:`~transformers.ModelOutput` instead of a plain tuple.
+            labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
+                Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
+                config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
+                (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
 
         Returns:
             Returns `modelscope.outputs.AttentionFillMaskModelOutput`
 
         Examples:
             >>> from modelscope.models import Model
-            >>> from modelscope.preprocessors import Preprocessor, NLPPreprocessor
+            >>> from modelscope.preprocessors import Preprocessor, FillMaskTransformersPreprocessor
             >>> model = Model.from_pretrained('damo/nlp_structbert_fill-mask_chinese-large')
-            >>> preprocessor = NLPPreprocessor('damo/nlp_structbert_fill-mask_chinese-large')
+            >>> preprocessor = FillMaskTransformersPreprocessor('damo/nlp_structbert_fill-mask_chinese-large')
             >>> # Call the model, return some tensors
             >>> print(model(**preprocessor('你师父差得动你，你师父可[MASK]不动我。')))
             >>> # Call the pipeline

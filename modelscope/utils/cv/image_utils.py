@@ -1,10 +1,19 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 
+import os
+
 import cv2
+import matplotlib
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
 
 from modelscope.outputs import OutputKeys
 from modelscope.preprocessors.image import load_image
+from modelscope.utils import logger as logging
+
+logger = logging.get_logger()
 
 
 def numpy_to_cv2img(img_array):
@@ -79,6 +88,25 @@ def realtime_object_detection_bbox_vis(image, bboxes):
     return image
 
 
+def draw_attribute(image, box, labels):
+    cv2.rectangle(image, (int(box[0]), int(box[1])),
+                  (int(box[2]), int(box[3])), (0, 0, 255), 2)
+    title = [
+        'gender      : ', 'age         : ', 'orient      : ', 'hat         : ',
+        'glass       : ', 'hand_bag    : ', 'shoulder_bag: ', 'back_pack   : ',
+        'upper_wear  : ', 'lower_wear  : ', 'upper_color : ', 'lower_color : '
+    ]
+
+    clr = (np.random.randint(0, 255), np.random.randint(0, 255),
+           np.random.randint(0, 255))
+
+    point = (int(box[0] + 5), int(box[1] + 20))
+    for idx, lb in enumerate(labels):
+        sz = title[idx] + lb
+        cv2.putText(image, f'{sz}', (point[0], point[1] + idx * 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, clr, 1)
+
+
 def draw_keypoints(output, original_image):
     poses = np.array(output[OutputKeys.KEYPOINTS])
     scores = np.array(output[OutputKeys.SCORES])
@@ -88,6 +116,16 @@ def draw_keypoints(output, original_image):
     for i in range(len(poses)):
         draw_box(image, np.array(boxes[i]))
         draw_joints(image, np.array(poses[i]), np.array(scores[i]))
+    return image
+
+
+def draw_pedestrian_attribute(output, original_image):
+    labels = np.array(output[OutputKeys.LABELS])
+    boxes = np.array(output[OutputKeys.BOXES])
+    assert len(labels) == len(boxes)
+    image = cv2.imread(original_image, -1)
+    for i in range(len(boxes)):
+        draw_attribute(image, np.array(boxes[i]), labels[i])
     return image
 
 
@@ -191,6 +229,33 @@ def draw_facial_expression_result(img_path, facial_expression_result):
         thickness=1,
         lineType=8)
     print('facial expression: {}'.format(label))
+    return img
+
+
+def draw_face_attribute_result(img_path, face_attribute_result):
+    scores = face_attribute_result[OutputKeys.SCORES]
+    labels = face_attribute_result[OutputKeys.LABELS]
+    label_gender = labels[0][np.argmax(scores[0])]
+    label_age = labels[1][np.argmax(scores[1])]
+    img = cv2.imread(img_path)
+    assert img is not None, f"Can't read img: {img_path}"
+    cv2.putText(
+        img,
+        'face gender: {}'.format(label_gender), (10, 10),
+        1,
+        1.0, (0, 255, 0),
+        thickness=1,
+        lineType=8)
+
+    cv2.putText(
+        img,
+        'face age interval: {}'.format(label_age), (10, 40),
+        1,
+        1.0, (255, 0, 0),
+        thickness=1,
+        lineType=8)
+    logger.info('face gender: {}'.format(label_gender))
+    logger.info('face age interval: {}'.format(label_age))
     return img
 
 
@@ -430,7 +495,7 @@ def show_image_object_detection_auto_result(img_path,
             lineType=8)
         cv2.putText(
             img,
-            label, (int((box[0] + box[2]) * 0.5), int(box[1])),
+            label, (int(box[0]), int(box[3])),
             1,
             1.0, (0, 255, 0),
             thickness=1,
@@ -439,3 +504,155 @@ def show_image_object_detection_auto_result(img_path,
     if save_path is not None:
         cv2.imwrite(save_path, img)
     return img
+
+
+def depth_to_color(depth):
+    colormap = plt.get_cmap('plasma')
+    depth_color = (colormap(
+        (depth.max() - depth) / depth.max()) * 2**8).astype(np.uint8)[:, :, :3]
+    depth_color = cv2.cvtColor(depth_color, cv2.COLOR_RGB2BGR)
+    return depth_color
+
+
+def show_video_depth_estimation_result(depths, video_save_path):
+    height, width, layers = depths[0].shape
+    out = cv2.VideoWriter(video_save_path, cv2.VideoWriter_fourcc(*'MP4V'), 25,
+                          (width, height))
+    for (i, img) in enumerate(depths):
+        out.write(cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2BGR))
+    out.release()
+
+
+def show_image_driving_perception_result(img,
+                                         results,
+                                         out_file='result.jpg',
+                                         if_draw=[1, 1, 1]):
+    bboxes = results.get(OutputKeys.BOXES)
+    if if_draw[0]:
+        for x in bboxes:
+            c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+            cv2.rectangle(
+                img, c1, c2, [255, 255, 0], thickness=2, lineType=cv2.LINE_AA)
+
+    result = results.get(OutputKeys.MASKS)
+
+    color_area = np.zeros((result[0].shape[0], result[0].shape[1], 3),
+                          dtype=np.uint8)
+
+    if if_draw[1]:
+        color_area[result[0] == 1] = [0, 255, 0]
+    if if_draw[2]:
+        color_area[result[1] == 1] = [255, 0, 0]
+    color_seg = color_area
+
+    color_mask = np.mean(color_seg, 2)
+    msk_idx = color_mask != 0
+    img[msk_idx] = img[msk_idx] * 0.5 + color_seg[msk_idx] * 0.5
+    if out_file is not None:
+        cv2.imwrite(out_file, img[:, :, ::-1])
+    return img
+
+
+def masks_visualization(masks, palette):
+    vis_masks = []
+    for f in range(masks.shape[0]):
+        img_E = Image.fromarray(masks[f])
+        img_E.putpalette(palette)
+        vis_masks.append(img_E)
+    return vis_masks
+
+
+# This implementation is adopted from LoFTR,
+# made public available under the Apache License, Version 2.0,
+# at https://github.com/zju3dv/LoFTR
+
+
+def make_matching_figure(img0,
+                         img1,
+                         mkpts0,
+                         mkpts1,
+                         color,
+                         kpts0=None,
+                         kpts1=None,
+                         text=[],
+                         dpi=75,
+                         path=None):
+    # draw image pair
+    assert mkpts0.shape[0] == mkpts1.shape[
+        0], f'mkpts0: {mkpts0.shape[0]} v.s. mkpts1: {mkpts1.shape[0]}'
+    fig, axes = plt.subplots(1, 2, figsize=(10, 6), dpi=dpi)
+    axes[0].imshow(img0, cmap='gray')
+    axes[1].imshow(img1, cmap='gray')
+    for i in range(2):  # clear all frames
+        axes[i].get_yaxis().set_ticks([])
+        axes[i].get_xaxis().set_ticks([])
+        for spine in axes[i].spines.values():
+            spine.set_visible(False)
+    plt.tight_layout(pad=1)
+
+    if kpts0 is not None:
+        assert kpts1 is not None
+        axes[0].scatter(kpts0[:, 0], kpts0[:, 1], c='w', s=2)
+        axes[1].scatter(kpts1[:, 0], kpts1[:, 1], c='w', s=2)
+
+    # draw matches
+    if mkpts0.shape[0] != 0 and mkpts1.shape[0] != 0:
+        fig.canvas.draw()
+        transFigure = fig.transFigure.inverted()
+        fkpts0 = transFigure.transform(axes[0].transData.transform(mkpts0))
+        fkpts1 = transFigure.transform(axes[1].transData.transform(mkpts1))
+        fig.lines = [
+            matplotlib.lines.Line2D((fkpts0[i, 0], fkpts1[i, 0]),
+                                    (fkpts0[i, 1], fkpts1[i, 1]),
+                                    transform=fig.transFigure,
+                                    c=color[i],
+                                    linewidth=1) for i in range(len(mkpts0))
+        ]
+
+        axes[0].scatter(mkpts0[:, 0], mkpts0[:, 1], c=color, s=4)
+        axes[1].scatter(mkpts1[:, 0], mkpts1[:, 1], c=color, s=4)
+
+    # put txts
+    txt_color = 'k' if img0[:100, :200].mean() > 200 else 'w'
+    fig.text(
+        0.01,
+        0.99,
+        '\n'.join(text),
+        transform=fig.axes[0].transAxes,
+        fontsize=15,
+        va='top',
+        ha='left',
+        color=txt_color)
+
+    # save or return figure
+    if path:
+        plt.savefig(str(path), bbox_inches='tight', pad_inches=0)
+        plt.close()
+    else:
+        return fig
+
+
+def match_pair_visualization(img_name0,
+                             img_name1,
+                             kpts0,
+                             kpts1,
+                             conf,
+                             output_filename='quadtree_match.png',
+                             method='QuadTreeAttention'):
+
+    print(f'Found {len(kpts0)} matches')
+
+    # visualize the matches
+    img0 = cv2.imread(str(img_name0))
+    img1 = cv2.imread(str(img_name1))
+
+    # Draw
+    color = cm.jet(conf)
+    text = [
+        method,
+        'Matches: {}'.format(len(kpts0)),
+    ]
+    fig = make_matching_figure(img0, img1, kpts0, kpts1, color, text=text)
+
+    # save the figure
+    fig.savefig(str(output_filename), dpi=300, bbox_inches='tight')

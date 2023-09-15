@@ -17,7 +17,7 @@ from modelscope.utils.regress_test_utils import (compare_arguments_nested,
                                                  numpify_tensor_nested)
 from .base import Exporter
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 class TorchModelExporter(Exporter):
@@ -115,7 +115,7 @@ class TorchModelExporter(Exporter):
         try:
             sig = _signature(model)
         except ValueError as e:
-            logger.warn('%s, skipping _decide_input_format' % e)
+            logger.warning('%s, skipping _decide_input_format' % e)
             return args
         try:
             ordered_list_keys = list(sig.parameters.keys())
@@ -143,9 +143,10 @@ class TorchModelExporter(Exporter):
             args = args_list if isinstance(args, list) else tuple(args_list)
         # Cases of models with no input args
         except IndexError:
-            logger.warn('No input args, skipping _decide_input_format')
+            logger.warning('No input args, skipping _decide_input_format')
         except Exception as e:
-            logger.warn('Skipping _decide_input_format\n {}'.format(e.args[0]))
+            logger.warning('Skipping _decide_input_format\n {}'.format(
+                e.args[0]))
 
         return args
 
@@ -212,45 +213,58 @@ class TorchModelExporter(Exporter):
                 )
 
         if validation:
-            try:
-                import onnx
-                import onnxruntime as ort
-            except ImportError:
-                logger.warn(
-                    'Cannot validate the exported onnx file, because '
-                    'the installation of onnx or onnxruntime cannot be found')
-                return
-            onnx_model = onnx.load(output)
-            onnx.checker.check_model(onnx_model)
-            ort_session = ort.InferenceSession(output)
-            with torch.no_grad():
-                model.eval()
-                outputs_origin = model.forward(
-                    *self._decide_input_format(model, dummy_inputs))
-            if isinstance(outputs_origin, (Mapping, ModelOutputBase)):
-                outputs_origin = list(
-                    numpify_tensor_nested(outputs_origin).values())
-            elif isinstance(outputs_origin, (tuple, list)):
-                outputs_origin = list(numpify_tensor_nested(outputs_origin))
-            outputs = ort_session.run(
-                onnx_outputs,
-                numpify_tensor_nested(dummy_inputs),
-            )
-            outputs = numpify_tensor_nested(outputs)
-            if isinstance(outputs, dict):
-                outputs = list(outputs.values())
-            elif isinstance(outputs, tuple):
-                outputs = list(outputs)
+            self._validate_onnx_model(dummy_inputs, model, output,
+                                      onnx_outputs, rtol, atol)
 
-            tols = {}
-            if rtol is not None:
-                tols['rtol'] = rtol
-            if atol is not None:
-                tols['atol'] = atol
-            if not compare_arguments_nested('Onnx model output match failed',
-                                            outputs, outputs_origin, **tols):
-                raise RuntimeError(
-                    'export onnx failed because of validation error.')
+    def _validate_onnx_model(self,
+                             dummy_inputs,
+                             model,
+                             output,
+                             onnx_outputs,
+                             rtol: float = None,
+                             atol: float = None):
+        try:
+            import onnx
+            import onnxruntime as ort
+        except ImportError:
+            logger.warning(
+                'Cannot validate the exported onnx file, because '
+                'the installation of onnx or onnxruntime cannot be found')
+            return
+        onnx_model = onnx.load(output)
+        onnx.checker.check_model(onnx_model)
+        ort_session = ort.InferenceSession(output)
+        with torch.no_grad():
+            model.eval()
+            outputs_origin = model.forward(
+                *self._decide_input_format(model, dummy_inputs))
+        if isinstance(outputs_origin, (Mapping, ModelOutputBase)):
+            outputs_origin = list(
+                numpify_tensor_nested(outputs_origin).values())
+        elif isinstance(outputs_origin, (tuple, list)):
+            outputs_origin = list(numpify_tensor_nested(outputs_origin))
+
+        outputs = ort_session.run(
+            onnx_outputs,
+            numpify_tensor_nested(dummy_inputs),
+        )
+        outputs = numpify_tensor_nested(outputs)
+        if isinstance(outputs, dict):
+            outputs = list(outputs.values())
+        elif isinstance(outputs, tuple):
+            outputs = list(outputs)
+
+        tols = {}
+        if rtol is not None:
+            tols['rtol'] = rtol
+        if atol is not None:
+            tols['atol'] = atol
+        print(outputs)
+        print(outputs_origin)
+        if not compare_arguments_nested('Onnx model output match failed',
+                                        outputs, outputs_origin, **tols):
+            raise RuntimeError(
+                'export onnx failed because of validation error.')
 
     def _torch_export_torch_script(self,
                                    model: nn.Module,
@@ -292,7 +306,7 @@ class TorchModelExporter(Exporter):
                     break
 
             if len(dummy_inputs) != len(dummy_inputs_filter):
-                logger.warn(
+                logger.warning(
                     f'Dummy inputs is not continuous in the forward method, '
                     f'origin length: {len(dummy_inputs)}, '
                     f'the length after filtering: {len(dummy_inputs_filter)}')
@@ -306,28 +320,33 @@ class TorchModelExporter(Exporter):
         torch.jit.save(traced_model, output)
 
         if validation:
-            ts_model = torch.jit.load(output)
-            with torch.no_grad():
-                model.eval()
-                ts_model.eval()
-                outputs = ts_model.forward(*dummy_inputs)
-                outputs = numpify_tensor_nested(outputs)
-                outputs_origin = model.forward(*dummy_inputs)
-                outputs_origin = numpify_tensor_nested(outputs_origin)
-                if isinstance(outputs, dict):
-                    outputs = list(outputs.values())
-                if isinstance(outputs_origin, dict):
-                    outputs_origin = list(outputs_origin.values())
-            tols = {}
-            if rtol is not None:
-                tols['rtol'] = rtol
-            if atol is not None:
-                tols['atol'] = atol
-            if not compare_arguments_nested(
-                    'Torch script model output match failed', outputs,
-                    outputs_origin, **tols):
-                raise RuntimeError(
-                    'export torch script failed because of validation error.')
+            self._validate_torch_script_model(dummy_inputs, model, output,
+                                              rtol, atol)
+
+    def _validate_torch_script_model(self, dummy_inputs, model, output, rtol,
+                                     atol):
+        ts_model = torch.jit.load(output)
+        with torch.no_grad():
+            model.eval()
+            ts_model.eval()
+            outputs = ts_model.forward(*dummy_inputs)
+            outputs = numpify_tensor_nested(outputs)
+            outputs_origin = model.forward(*dummy_inputs)
+            outputs_origin = numpify_tensor_nested(outputs_origin)
+            if isinstance(outputs, dict):
+                outputs = list(outputs.values())
+            if isinstance(outputs_origin, dict):
+                outputs_origin = list(outputs_origin.values())
+        tols = {}
+        if rtol is not None:
+            tols['rtol'] = rtol
+        if atol is not None:
+            tols['atol'] = atol
+        if not compare_arguments_nested(
+                'Torch script model output match failed', outputs,
+                outputs_origin, **tols):
+            raise RuntimeError(
+                'export torch script failed because of validation error.')
 
 
 @contextmanager

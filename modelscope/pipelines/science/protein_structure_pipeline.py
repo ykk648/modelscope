@@ -59,8 +59,9 @@ def load_feature_for_one_target(
 
     else:
         uniprot_msa_dir = data_folder
-        sequence_ids = open(os.path.join(data_folder,
-                                         'chains.txt')).readline().split()
+        sequence_ids = open(
+            os.path.join(data_folder, 'chains.txt'),
+            encoding='utf-8').readline().split()
 
     if symmetry_group is None:
         batch, _ = load_and_process(
@@ -75,7 +76,19 @@ def load_feature_for_one_target(
             uniprot_msa_dir=uniprot_msa_dir,
         )
     else:
-        raise NotImplementedError
+        # Not for unifold-symmetry
+        # only for unifold-multimer
+        batch, _ = load_and_process(
+            config=config.data,
+            mode='predict',
+            seed=seed,
+            batch_idx=None,
+            data_idx=0,
+            is_distillation=False,
+            sequence_ids=sequence_ids,
+            monomer_feature_dir=data_folder,
+            uniprot_msa_dir=uniprot_msa_dir,
+        )
     batch = UnifoldDataset.collater([batch])
     return batch
 
@@ -96,7 +109,7 @@ class ProteinStructurePipeline(Pipeline):
             preprocessor (Preprocessor): An optional preprocessor instance, please make sure the preprocessor fits for
             the model if supplied.
 
-            Example:
+        Examples:
             >>> from modelscope.pipelines import pipeline
             >>> pipeline_ins = pipeline(task='protein-structure',
             >>>    model='DPTech/uni-fold-monomer')
@@ -104,22 +117,16 @@ class ProteinStructurePipeline(Pipeline):
             >>> print(pipeline_ins(protein))
 
         """
-        import copy
-        model_path = copy.deepcopy(model) if isinstance(model, str) else None
-        cfg = read_config(model_path)  # only model is str
-        self.cfg = cfg
-        self.config = model_config(
-            cfg['pipeline']['model_name'])  # alphafold config
-        model = model if isinstance(
-            model, Model) else Model.from_pretrained(model_path)
-        self.postprocessor = cfg.pop('postprocessor', None)
-        if preprocessor is None:
-            preprocessor_cfg = cfg.preprocessor
-            preprocessor = build_preprocessor(preprocessor_cfg, Fields.science)
-        model.eval()
-        model.model.inference_mode()
-        model.model_dir = model_path
         super().__init__(model=model, preprocessor=preprocessor, **kwargs)
+        self.cfg = read_config(self.model.model_dir)
+        self.config = model_config(
+            self.cfg['pipeline']['model_name'])  # alphafold config
+        self.postprocessor = self.cfg.pop('postprocessor', None)
+        if preprocessor is None:
+            preprocessor_cfg = self.cfg.preprocessor
+            self.preprocessor = build_preprocessor(preprocessor_cfg,
+                                                   Fields.science)
+        self.model.eval()
 
     def _sanitize_parameters(self, **pipeline_parameters):
         return pipeline_parameters, pipeline_parameters, pipeline_parameters

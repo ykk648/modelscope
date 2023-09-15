@@ -511,12 +511,12 @@ class json_dataset(data.Dataset):
 
     def load_json_stream(self, load_path):
         if not self.loose_json:
-            jsons = json.load(open(load_path, 'r'))
+            jsons = json.load(open(load_path, 'r', encoding='utf-8'))
             generator = iter(jsons)
         else:
 
             def gen_helper():
-                with open(load_path, 'r') as f:
+                with open(load_path, 'r', encoding='utf-8') as f:
                     for row in f:
                         yield json.loads(row)
 
@@ -583,8 +583,8 @@ class XLDataset(data.Dataset):
     def getidx(self, idx):
         tokens, targets, loss_masks = [], [], []
         attention_mask = np.concatenate(
-            (np.zeros((self.max_seq_len, self.mem_len), dtype=np.long),
-             np.ones((self.max_seq_len, self.max_seq_len), dtype=np.long)),
+            (np.zeros((self.max_seq_len, self.mem_len), dtype=int),
+             np.ones((self.max_seq_len, self.max_seq_len), dtype=int)),
             axis=1)
         sample_idx = bisect_right(self.indices, idx * self.max_seq_len)
         last_end = 0 if sample_idx == 0 else self.indices[sample_idx - 1]

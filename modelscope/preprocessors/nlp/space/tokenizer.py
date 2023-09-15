@@ -365,8 +365,8 @@ class WordpieceTokenizer(object):
         using the given vocabulary.
 
         For example:
-          input = "unaffable"
-          output = ["un", "##aff", "##able"]
+          >>> input = "unaffable"
+          >>> output = ["un", "##aff", "##able"]
 
         Args:
           text: A single token or whitespace separated tokens. This should have
@@ -531,7 +531,7 @@ class GPT2Tokenizer(object):
                  special_tokens=None,
                  max_len=None):
         self.max_len = max_len if max_len is not None else int(1e12)
-        self.encoder = json.load(open(vocab_file))
+        self.encoder = json.load(open(vocab_file, encoding='utf-8'))
         self.decoder = {v: k for k, v in self.encoder.items()}
         self.errors = errors  # how to handle errors in decoding
         self.byte_encoder = bytes_to_unicode()

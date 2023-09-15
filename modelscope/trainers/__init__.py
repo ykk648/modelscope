@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from modelscope.utils.import_utils import LazyImportModule
 
 if TYPE_CHECKING:
-    from .audio.ans_trainer import ANSTrainer
+    from .audio import ANSTrainer, KanttsTrainer
     from .base import DummyTrainer
     from .builder import build_trainer
     from .cv import (ImageInstanceSegmentationTrainer,
@@ -12,13 +12,15 @@ if TYPE_CHECKING:
                      MovieSceneSegmentationTrainer, ImageInpaintingTrainer,
                      ReferringVideoObjectSegmentationTrainer)
     from .multi_modal import CLIPTrainer
-    from .nlp import SequenceClassificationTrainer, TextRankingTrainer
-    from .nlp_trainer import NlpEpochBasedTrainer, VecoTrainer, NlpTrainerArguments
+    from .nlp import SequenceClassificationTrainer, TextRankingTrainer, SiameseUIETrainer
+    from .nlp_trainer import NlpEpochBasedTrainer, VecoTrainer
     from .trainer import EpochBasedTrainer
+    from .training_args import TrainingArgs, build_dataset_from_file
+    from .hooks import Hook, Priority
 
 else:
     _import_structure = {
-        'audio.ans_trainer': ['ANSTrainer'],
+        'audio': ['ANSTrainer', 'KanttsTrainer'],
         'base': ['DummyTrainer'],
         'builder': ['build_trainer'],
         'cv': [
@@ -27,10 +29,14 @@ else:
             'ImageInpaintingTrainer'
         ],
         'multi_modal': ['CLIPTrainer'],
-        'nlp': ['SequenceClassificationTrainer', 'TextRankingTrainer'],
-        'nlp_trainer':
-        ['NlpEpochBasedTrainer', 'VecoTrainer', 'NlpTrainerArguments'],
-        'trainer': ['EpochBasedTrainer']
+        'nlp': [
+            'SequenceClassificationTrainer', 'TextRankingTrainer',
+            'SiameseUIETrainer'
+        ],
+        'nlp_trainer': ['NlpEpochBasedTrainer', 'VecoTrainer'],
+        'trainer': ['EpochBasedTrainer'],
+        'training_args': ['TrainingArgs', 'build_dataset_from_file'],
+        'hooks': ['Hook']
     }
 
     import sys

@@ -22,7 +22,6 @@ import torch.utils.checkpoint
 from torch import nn
 from torch.nn import LayerNorm
 from transformers.activations import ACT2FN
-from transformers.modeling_outputs import BaseModelOutput
 from transformers.modeling_utils import PreTrainedModel
 from transformers.pytorch_utils import softmax_backward_data
 
@@ -34,7 +33,7 @@ from modelscope.utils import logger as logging
 from modelscope.utils.constant import Tasks
 from .configuration import DebertaV2Config
 
-logger = logging.get_logger(__name__)
+logger = logging.get_logger()
 
 
 # Copied from transformers.models.deberta.modeling_deberta.ContextPooler
@@ -75,7 +74,6 @@ class XSoftmax(torch.autograd.Function):
 
     Example:
 
-    ```python
     >>> import torch
     >>> from transformers.models.deberta_v2.modeling_deberta_v2 import XSoftmax
 
@@ -89,7 +87,7 @@ class XSoftmax(torch.autograd.Function):
     >>> dim = -1
 
     >>> y = XSoftmax.apply(x, mask, dim)
-    ```"""
+    """
 
     @staticmethod
     def forward(self, input, mask, dim):
@@ -574,7 +572,7 @@ class DebertaV2Encoder(nn.Module):
             return tuple(
                 v for v in [output_states, all_hidden_states, all_attentions]
                 if v is not None)
-        return BaseModelOutput(
+        return AttentionBackboneModelOutput(
             last_hidden_state=output_states,
             hidden_states=all_hidden_states,
             attentions=all_attentions)
@@ -1105,38 +1103,38 @@ class DebertaV2Model(DebertaV2PreTrainedModel):
     ) -> Union[Tuple, AttentionBackboneModelOutput]:
         r"""
         Args:
-        input_ids (`torch.LongTensor` of shape `('batch_size, sequence_length')`):
-            Indices of input sequence tokens in the vocabulary.
+            input_ids (`torch.LongTensor` of shape `('batch_size, sequence_length')`):
+                Indices of input sequence tokens in the vocabulary.
 
-        attention_mask (`torch.FloatTensor` of shape `('batch_size, sequence_length')`, *optional*):
-            Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
+            attention_mask (`torch.FloatTensor` of shape `('batch_size, sequence_length')`, *optional*):
+                Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
 
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
+                - 1 for tokens that are **not masked**,
+                - 0 for tokens that are **masked**.
 
-        token_type_ids (`torch.LongTensor` of shape `('batch_size, sequence_length')`, *optional*):
-            Segment token indices to indicate first and second portions of the inputs. Indices are selected in `[0,
-            1]`:
+            token_type_ids (`torch.LongTensor` of shape `('batch_size, sequence_length')`, *optional*):
+                Segment token indices to indicate first and second portions of the inputs. Indices are selected in `[0,
+                1]`:
 
-            - 0 corresponds to a *sentence A* token,
-            - 1 corresponds to a *sentence B* token.
+                - 0 corresponds to a *sentence A* token,
+                - 1 corresponds to a *sentence B* token.
 
-        position_ids (`torch.LongTensor` of shape `('batch_size, sequence_length')`, *optional*):
-            Indices of positions of each input sequence tokens in the position embeddings. Selected in the range `[0,
-            config.max_position_embeddings - 1]`.
+            position_ids (`torch.LongTensor` of shape `('batch_size, sequence_length')`, *optional*):
+                Indices of positions of each input sequence tokens in the position embeddings. Selected in the range
+                `[0,config.max_position_embeddings - 1]`.
 
-        inputs_embeds (`torch.FloatTensor` of shape `('batch_size, sequence_length', hidden_size)`, *optional*):
-            Optionally, instead of passing `input_ids` you can choose to directly pass an embedded representation. This
-            is useful if you want more control over how to convert *input_ids* indices into associated vectors than the
-            model's internal embedding lookup matrix.
-        output_attentions (`bool`, *optional*):
-            Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
-            tensors for more detail.
-        output_hidden_states (`bool`, *optional*):
-            Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors for
-            more detail.
-        return_dict (`bool`, *optional*):
-            Whether or not to return a dataclass instead of a plain tuple.
+            inputs_embeds (`torch.FloatTensor` of shape `('batch_size, sequence_length', hidden_size)`, *optional*):
+                Optionally, instead of passing `input_ids` you can choose to directly pass an embedded representation.
+                This is useful if you want more control over how to convert *input_ids* indices into associated
+                vectors than the model's internal embedding lookup matrix.
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
+                tensors for more detail.
+            output_hidden_states (`bool`, *optional*):
+                Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors for
+                more detail.
+            return_dict (`bool`, *optional*):
+                Whether or not to return a dataclass instead of a plain tuple.
 
         Returns:
             Returns `modelscope.outputs.AttentionBackboneModelOutput`

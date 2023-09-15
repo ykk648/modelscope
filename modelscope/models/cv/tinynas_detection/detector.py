@@ -1,22 +1,21 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
-# The AIRDet implementation is also open-sourced by the authors, and available at https://github.com/tinyvision/AIRDet.
+# The DAMO-YOLO implementation is also open-sourced by the authors at https://github.com/tinyvision/damo-yolo.
 
 import os.path as osp
 import pickle
 
-import cv2
 import torch
 import torch.nn as nn
 import torchvision
 
-from modelscope.metainfo import Models
 from modelscope.models.base.base_torch_model import TorchModel
-from modelscope.models.builder import MODELS
-from modelscope.utils.config import Config
-from modelscope.utils.constant import ModelFile, Tasks
-from .backbone import build_backbone
-from .head import build_head
-from .neck import build_neck
+from modelscope.models.cv.tinynas_detection.damo.base_models.backbones import \
+    build_backbone
+from modelscope.models.cv.tinynas_detection.damo.base_models.heads import \
+    build_head
+from modelscope.models.cv.tinynas_detection.damo.base_models.necks import \
+    build_neck
+from modelscope.outputs.cv_outputs import DetectionOutput
 from .utils import parse_config
 
 
@@ -42,19 +41,24 @@ class SingleStageDetector(TorchModel):
         self.conf_thre = config.model.head.nms_conf_thre
         self.nms_thre = config.model.head.nms_iou_thre
 
-        if self.cfg.model.backbone.name == 'TinyNAS':
+        if 'TinyNAS' in self.cfg.model.backbone.name:
             self.cfg.model.backbone.structure_file = osp.join(
                 model_dir, self.cfg.model.backbone.structure_file)
         self.backbone = build_backbone(self.cfg.model.backbone)
         self.neck = build_neck(self.cfg.model.neck)
         self.head = build_head(self.cfg.model.head)
+        self.head.nms = False
         self.apply(self.init_bn)
+        self.onnx_export = False
 
         self.load_pretrain_model(model_path)
 
     def load_pretrain_model(self, pretrain_model):
-
-        state_dict = torch.load(pretrain_model, map_location='cpu')['model']
+        ckpt = torch.load(pretrain_model, map_location='cpu')
+        if 'model' in ckpt:
+            state_dict = ckpt['model']
+        elif 'state_dict' in ckpt:
+            state_dict = ckpt['state_dict']
         new_state_dict = {}
         for k, v in state_dict.items():
             k = k.replace('module.', '')
@@ -67,43 +71,21 @@ class SingleStageDetector(TorchModel):
                 m.eps = 1e-3
                 m.momentum = 0.03
 
-    def inference(self, x):
-
+    def forward(self, x):
         if self.training:
-            return self.forward_train(x)
+            pass
         else:
-            return self.forward_eval(x)
-
-    def forward_train(self, x):
-
-        pass
-
-    def forward_eval(self, x):
-
-        x = self.backbone(x)
-        x = self.neck(x)
-        prediction = self.head(x)
-
-        return prediction
-
-    def preprocess(self, image):
-        image = torch.from_numpy(image).type(torch.float32)
-        image = image.permute(2, 0, 1)
-        shape = image.shape  # c, h, w
-        if self.size_divisible > 0:
-            import math
-            stride = self.size_divisible
-            shape = list(shape)
-            shape[1] = int(math.ceil(shape[1] / stride) * stride)
-            shape[2] = int(math.ceil(shape[2] / stride) * stride)
-            shape = tuple(shape)
-        pad_img = image.new(*shape).zero_()
-        pad_img[:, :image.shape[1], :image.shape[2]].copy_(image)
-        pad_img = pad_img.unsqueeze(0)
-
-        return pad_img
+            x = self.backbone(x)
+            x = self.neck(x)
+            cls_scores, bbox_preds = self.head(x)
+            prediction = torch.cat(
+                [bbox_preds, cls_scores[..., 0:self.num_classes]], dim=-1)
+            return prediction
 
     def postprocess(self, preds):
+        if self.onnx_export:
+            return preds
+
         bboxes, scores, labels_idx = postprocess_gfocal(
             preds, self.num_classes, self.conf_thre, self.nms_thre)
         bboxes = bboxes.cpu().numpy()
@@ -111,7 +93,11 @@ class SingleStageDetector(TorchModel):
         labels_idx = labels_idx.cpu().numpy()
         labels = [self.label_map[idx + 1][0]['name'] for idx in labels_idx]
 
-        return (bboxes, scores, labels)
+        return DetectionOutput(
+            boxes=bboxes,
+            scores=scores,
+            class_ids=labels,
+        )
 
 
 def multiclass_nms(multi_bboxes,

@@ -82,18 +82,19 @@ class LinearAECPipeline(Pipeline):
         window = torch.hamming_window(winlen, periodic=False)
 
         def stft(x):
-            return torch.stft(
-                x,
-                n_fft,
-                hop_length,
-                winlen,
-                center=False,
-                window=window.to(x.device),
-                return_complex=False)
+            return torch.view_as_real(
+                torch.stft(
+                    x,
+                    n_fft,
+                    hop_length,
+                    winlen,
+                    center=False,
+                    window=window.to(x.device),
+                    return_complex=True))
 
         def istft(x, slen):
             return torch.istft(
-                x,
+                torch.view_as_complex(x),
                 n_fft,
                 hop_length,
                 winlen,
@@ -122,10 +123,7 @@ class LinearAECPipeline(Pipeline):
                 'base' the base audio to mask.
 
         Returns:
-            dict:
-                {
-                    'output_pcm': generated audio array
-                }
+            output_pcm: generated audio array
         """
         output_data = self._process(inputs['feature'], inputs['base'])
         output_data = output_data.astype(np.int16).tobytes()
@@ -135,17 +133,12 @@ class LinearAECPipeline(Pipeline):
         r"""The post process. Will save audio to file, if the output_path is given.
 
         Args:
-            inputs: dict:
-                {
-                    'output_pcm': generated audio array
-                }
+            inputs: a dict contains following keys:
+                - output_pcm: generated audio array
             kwargs: accept 'output_path' which is the path to write generated audio
 
         Returns:
-            dict:
-                {
-                    'output_pcm': generated audio array
-                }
+            output_pcm: generated audio array
         """
         if 'output_path' in kwargs.keys():
             wav.write(

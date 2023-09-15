@@ -5,10 +5,13 @@ from modelscope.utils.import_utils import LazyImportModule
 
 if TYPE_CHECKING:
     from .swin_transformer import SwinTransformer
+    from .swin_transformer import D2SwinTransformer
+    from .resnet import build_resnet_backbone
 
 else:
     _import_structure = {
-        'swin_transformer': ['SwinTransformer'],
+        'swin_transformer': ['SwinTransformer', 'D2SwinTransformer'],
+        'resnet': ['build_resnet_backbone']
     }
 
     import sys

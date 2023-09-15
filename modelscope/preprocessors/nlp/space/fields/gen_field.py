@@ -314,8 +314,8 @@ class MultiWOZBPETextField(BPETextField):
         try:
             import en_core_web_sm
         except ImportError:
-            logger.warn('Miss module en_core_web_sm!')
-            logger.warn('We will download en_core_web_sm automatically.')
+            logger.warning('Miss module en_core_web_sm!')
+            logger.warning('We will download en_core_web_sm automatically.')
             try:
                 spacy.cli.download('en_core_web_sm')
             except Exception as e:
@@ -359,12 +359,14 @@ class MultiWOZBPETextField(BPETextField):
             test_list = [
                 line.strip().lower() for line in open(
                     os.path.join(kwargs['data_dir'], 'testListFile.json'),
-                    'r').readlines()
+                    'r',
+                    encoding='utf-8').readlines()
             ]
             dev_list = [
                 line.strip().lower() for line in open(
                     os.path.join(kwargs['data_dir'], 'valListFile.json'),
-                    'r').readlines()
+                    'r',
+                    encoding='utf-8').readlines()
             ]
 
             self.dev_files, self.test_files = {}, {}

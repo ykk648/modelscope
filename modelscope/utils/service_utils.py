@@ -5,12 +5,9 @@ from io import BytesIO
 import json
 import numpy as np
 import requests
-from PIL import Image
 
 from modelscope.outputs import TASK_OUTPUTS, OutputKeys
 from modelscope.pipeline_inputs import TASK_INPUTS, InputType
-from modelscope.pipelines import pipeline
-from modelscope.utils.constant import Tasks, TasksIODescriptions
 
 
 # service data decoder func decodes data from network and convert it to pipeline's input
@@ -91,12 +88,14 @@ def decode_base64_to_binary(encoding):
 
 
 def decode_base64_to_image(encoding):
+    from PIL import Image
     content = encoding.split(';')[1]
     image_encoded = content.split(',')[1]
     return Image.open(BytesIO(base64.b64decode(image_encoded)))
 
 
 def encode_array_to_img_base64(image_array):
+    from PIL import Image
     with BytesIO() as output_bytes:
         pil_image = Image.fromarray(image_array.astype(np.uint8))
         pil_image.save(output_bytes, 'PNG')
@@ -142,8 +141,10 @@ def encode_url_or_file_to_base64(path):
 def service_data_decoder(task, data):
     if CustomDecoder.get(task) is not None:
         return CustomDecoder[task](data)
-    input_type = TASK_INPUTS[task]
     input_data = data.decode('utf-8')
+    input_type = TASK_INPUTS[task]
+    if isinstance(input_type, list):
+        input_type = input_type[0]
     if input_type == InputType.IMAGE:
         return decode_base64_to_image(input_data)
     elif input_type == InputType.AUDIO:
@@ -152,6 +153,7 @@ def service_data_decoder(task, data):
         return input_data
     elif isinstance(input_type, dict):
         input_data = {}
+        data = json.loads(data)
         for key, val in input_type.items():
             if val == InputType.IMAGE:
                 input_data[key] = decode_base64_to_image(data[key])
@@ -159,6 +161,8 @@ def service_data_decoder(task, data):
                 input_data[key] = decode_base64_to_binary(data[key])[0]
             elif val == InputType.TEXT:
                 input_data[key] = data[key]
+            else:
+                return data
 
     return input_data
 

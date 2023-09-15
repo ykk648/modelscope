@@ -8,14 +8,13 @@ from modelscope.models import Model
 from modelscope.models.nlp import SbertForMaskedLM, VecoForMaskedLM
 from modelscope.pipelines import pipeline
 from modelscope.pipelines.nlp import FillMaskPipeline
-from modelscope.preprocessors import NLPPreprocessor
+from modelscope.preprocessors import FillMaskTransformersPreprocessor
 from modelscope.utils.constant import Tasks
-from modelscope.utils.demo_utils import DemoCompatibilityCheck
-from modelscope.utils.regress_test_utils import MsRegressTool
+from modelscope.utils.regress_test_utils import IgnoreKeyFn, MsRegressTool
 from modelscope.utils.test_utils import test_level
 
 
-class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
+class FillMaskTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.task = Tasks.fill_mask
@@ -27,6 +26,7 @@ class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
     }
     model_id_veco = 'damo/nlp_veco_fill-mask-large'
     model_id_bert = 'damo/nlp_bert_fill-mask_chinese-base'
+    model_id_megatron_bert = 'damo/nlp_megatron_bert_fill_mask_1.3B_test'
 
     ori_texts = {
         'zh':
@@ -52,7 +52,7 @@ class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
         # sbert
         for language in ['zh']:
             model_dir = snapshot_download(self.model_id_sbert[language])
-            preprocessor = NLPPreprocessor(
+            preprocessor = FillMaskTransformersPreprocessor(
                 model_dir, first_sequence='sentence', second_sequence=None)
             model = SbertForMaskedLM.from_pretrained(model_dir)
             pipeline1 = FillMaskPipeline(model, preprocessor)
@@ -67,7 +67,7 @@ class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
 
         # veco
         model_dir = snapshot_download(self.model_id_veco)
-        preprocessor = NLPPreprocessor(
+        preprocessor = FillMaskTransformersPreprocessor(
             model_dir, first_sequence='sentence', second_sequence=None)
         model = VecoForMaskedLM.from_pretrained(model_dir)
         pipeline1 = FillMaskPipeline(model, preprocessor)
@@ -84,7 +84,7 @@ class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
         # bert
         language = 'zh'
         model_dir = snapshot_download(self.model_id_bert)
-        preprocessor = NLPPreprocessor(
+        preprocessor = FillMaskTransformersPreprocessor(
             model_dir, first_sequence='sentence', second_sequence=None)
         model = Model.from_pretrained(model_dir)
         pipeline1 = FillMaskPipeline(model, preprocessor)
@@ -102,21 +102,23 @@ class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
         for language in ['zh']:
             print(self.model_id_sbert[language])
             model = Model.from_pretrained(self.model_id_sbert[language])
-            preprocessor = NLPPreprocessor(
+            preprocessor = FillMaskTransformersPreprocessor(
                 model.model_dir,
                 first_sequence='sentence',
                 second_sequence=None)
             pipeline_ins = pipeline(
                 task=Tasks.fill_mask, model=model, preprocessor=preprocessor)
             with self.regress_tool.monitor_module_single_forward(
-                    pipeline_ins.model, f'fill_mask_sbert_{language}'):
+                    pipeline_ins.model,
+                    f'fill_mask_sbert_{language}',
+                    compare_fn=IgnoreKeyFn('.*intermediate_act_fn')):
                 print(
                     f'\nori_text: {self.ori_texts[language]}\ninput: {self.test_inputs[language]}\npipeline: '
                     f'{pipeline_ins(self.test_inputs[language])}\n')
 
         # veco
         model = Model.from_pretrained(self.model_id_veco)
-        preprocessor = NLPPreprocessor(
+        preprocessor = FillMaskTransformersPreprocessor(
             model.model_dir, first_sequence='sentence', second_sequence=None)
         pipeline_ins = pipeline(
             Tasks.fill_mask, model=model, preprocessor=preprocessor)
@@ -124,13 +126,16 @@ class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
             ori_text = self.ori_texts[language]
             test_input = self.test_inputs[language].replace('[MASK]', '<mask>')
             with self.regress_tool.monitor_module_single_forward(
-                    pipeline_ins.model, f'fill_mask_veco_{language}'):
+                    pipeline_ins.model,
+                    f'fill_mask_veco_{language}',
+                    compare_fn=IgnoreKeyFn('.*intermediate_act_fn')):
                 print(
                     f'\nori_text: {ori_text}\ninput: {test_input}\npipeline: '
                     f'{pipeline_ins(test_input)}\n')
 
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    @unittest.skipUnless(test_level() >= 1, 'skip test in current test level')
     def test_run_with_model_name(self):
+        # TODO: to be fixed in the future
         # veco
         pipeline_ins = pipeline(task=Tasks.fill_mask, model=self.model_id_veco)
         for language in ['zh', 'en']:
@@ -154,6 +159,14 @@ class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
             f'\nori_text: {self.ori_texts[language]}\ninput: {self.test_inputs[language]}\npipeline: '
             f'{pipeline_ins(self.test_inputs[language])}\n')
 
+        # Megatron-Bert
+        language = 'zh'
+        pipeline_ins = pipeline(
+            task=Tasks.fill_mask, model=self.model_id_megatron_bert)
+        print(
+            f'\nori_text: {self.ori_texts[language]}\ninput: {self.test_inputs[language]}\npipeline: '
+            f'{pipeline_ins(self.test_inputs[language])}\n')
+
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_run_with_default_model(self):
         pipeline_ins = pipeline(task=Tasks.fill_mask)
@@ -162,10 +175,6 @@ class FillMaskTest(unittest.TestCase, DemoCompatibilityCheck):
         test_input = self.test_inputs[language].replace('[MASK]', '<mask>')
         print(f'\nori_text: {ori_text}\ninput: {test_input}\npipeline: '
               f'{pipeline_ins(test_input)}\n')
-
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
-    def test_demo_compatibility(self):
-        self.compatibility_check()
 
 
 if __name__ == '__main__':

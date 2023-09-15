@@ -1,20 +1,22 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 import os
 from abc import ABC, abstractmethod
-from copy import deepcopy
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence, Union
 
-from modelscope.metainfo import Models, Preprocessors
+from modelscope.metainfo import Models, Preprocessors, TaskModels
 from modelscope.utils.config import Config, ConfigDict
-from modelscope.utils.constant import DEFAULT_MODEL_REVISION, ModeKeys, Tasks
+from modelscope.utils.constant import (DEFAULT_MODEL_REVISION, Invoke,
+                                       ModeKeys, Tasks)
 from modelscope.utils.hub import read_config, snapshot_download
 from modelscope.utils.logger import get_logger
 from .builder import build_preprocessor
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 PREPROCESSOR_MAP = {
     # nlp
+    (Models.canmt, Tasks.competency_aware_translation):
+    Preprocessors.canmt_translation,
     # bart
     (Models.bart, Tasks.text_error_correction):
     Preprocessors.text_error_correction,
@@ -30,6 +32,8 @@ PREPROCESSOR_MAP = {
     Preprocessors.sentence_embedding,
     (Models.bert, Tasks.text_classification):
     Preprocessors.sen_cls_tokenizer,
+    (Models.bert, Tasks.speaker_diarization_dialogue_detection):
+    Preprocessors.sen_cls_tokenizer,
     (Models.bert, Tasks.nli):
     Preprocessors.sen_cls_tokenizer,
     (Models.bert, Tasks.sentiment_classification):
@@ -43,6 +47,8 @@ PREPROCESSOR_MAP = {
     (Models.bert, Tasks.part_of_speech):
     Preprocessors.token_cls_tokenizer,
     (Models.bert, Tasks.token_classification):
+    Preprocessors.token_cls_tokenizer,
+    (Models.bert, Tasks.speaker_diarization_semantic_speaker_turn_detection):
     Preprocessors.token_cls_tokenizer,
     (Models.bert, Tasks.word_segmentation):
     Preprocessors.token_cls_tokenizer,
@@ -97,10 +103,20 @@ PREPROCESSOR_MAP = {
     Preprocessors.sen_cls_tokenizer,
     (Models.structbert, Tasks.part_of_speech):
     Preprocessors.token_cls_tokenizer,
+    (Models.token_classification_for_ner, Tasks.named_entity_recognition):
+    Preprocessors.token_cls_tokenizer,
     (Models.structbert, Tasks.token_classification):
     Preprocessors.token_cls_tokenizer,
     (Models.structbert, Tasks.word_segmentation):
     Preprocessors.token_cls_tokenizer,
+
+    # doc2bot
+    (Models.doc2bot, Tasks.document_grounded_dialog_generate):
+    Preprocessors.document_grounded_dialog_generate,
+    (Models.doc2bot, Tasks.document_grounded_dialog_rerank):
+    Preprocessors.document_grounded_dialog_rerank,
+    (Models.doc2bot, Tasks.document_grounded_dialog_retrieval):
+    Preprocessors.document_grounded_dialog_retrieval,
 
     # veco
     (Models.veco, Tasks.backbone):
@@ -116,14 +132,60 @@ PREPROCESSOR_MAP = {
     (Models.veco, Tasks.sentence_similarity):
     Preprocessors.sen_cls_tokenizer,
 
-    # space
+    # ner models
+    (Models.lcrf, Tasks.named_entity_recognition):
+    Preprocessors.sequence_labeling_tokenizer,
+    (Models.lcrf, Tasks.word_segmentation):
+    Preprocessors.sequence_labeling_tokenizer,
+    (Models.lcrf, Tasks.part_of_speech):
+    Preprocessors.sequence_labeling_tokenizer,
+    (Models.lcrf_wseg, Tasks.word_segmentation):
+    Preprocessors.sequence_labeling_tokenizer,
+    (Models.tcrf_wseg, Tasks.word_segmentation):
+    Preprocessors.sequence_labeling_tokenizer,
+    (Models.tcrf, Tasks.named_entity_recognition):
+    Preprocessors.sequence_labeling_tokenizer,
+
+    # task models
+    (TaskModels.token_classification, Tasks.token_classification):
+    Preprocessors.sequence_labeling_tokenizer,
+    (TaskModels.token_classification, Tasks.part_of_speech):
+    Preprocessors.sequence_labeling_tokenizer,
+    (TaskModels.token_classification, Tasks.named_entity_recognition):
+    Preprocessors.sequence_labeling_tokenizer,
+    (TaskModels.text_classification, Tasks.text_classification):
+    Preprocessors.sen_cls_tokenizer,
+    (TaskModels.fill_mask, Tasks.fill_mask):
+    Preprocessors.fill_mask,
+    (TaskModels.feature_extraction, Tasks.feature_extraction):
+    Preprocessors.feature_extraction,
+    (TaskModels.information_extraction, Tasks.information_extraction):
+    Preprocessors.re_tokenizer,
+    (TaskModels.text_ranking, Tasks.text_ranking):
+    Preprocessors.text_ranking,
+    (TaskModels.text_generation, Tasks.text_generation):
+    Preprocessors.text_gen_tokenizer,
+
+    # cv
+    (Models.tinynas_detection, Tasks.image_object_detection):
+    Preprocessors.object_detection_tinynas_preprocessor,
+    (Models.tinynas_damoyolo, Tasks.image_object_detection):
+    Preprocessors.object_detection_tinynas_preprocessor,
+    (Models.tinynas_damoyolo, Tasks.domain_specific_object_detection):
+    Preprocessors.object_detection_tinynas_preprocessor,
+    (Models.controllable_image_generation, Tasks.controllable_image_generation):
+    Preprocessors.controllable_image_generation_preprocessor,
 }
 
 
 class Preprocessor(ABC):
+    """Base of preprocessors.
+    """
 
     def __init__(self, mode=ModeKeys.INFERENCE, *args, **kwargs):
         self._mode = mode
+        assert self._mode in (ModeKeys.INFERENCE, ModeKeys.TRAIN,
+                              ModeKeys.EVAL)
         self.device = int(
             os.environ['LOCAL_RANK']) if 'LOCAL_RANK' in os.environ else None
         pass
@@ -194,7 +256,19 @@ class Preprocessor(ABC):
         """
         if not os.path.exists(model_name_or_path):
             model_dir = snapshot_download(
-                model_name_or_path, revision=revision)
+                model_name_or_path,
+                revision=revision,
+                user_agent={Invoke.KEY: Invoke.PREPROCESSOR},
+                ignore_file_pattern=[
+                    '.*.bin',
+                    '.*.ts',
+                    '.*.pt',
+                    '.*.data-00000-of-00001',
+                    '.*.onnx',
+                    '.*.meta',
+                    '.*.pb',
+                    '.*.index',
+                ])
         else:
             model_dir = model_name_or_path
         if cfg_dict is None:
@@ -205,10 +279,12 @@ class Preprocessor(ABC):
         if 'task' in kwargs:
             task = kwargs.pop('task')
         field_name = Tasks.find_field_by_task(task)
+        if 'field' in kwargs:
+            field_name = kwargs.pop('field')
         sub_key = 'train' if preprocessor_mode == ModeKeys.TRAIN else 'val'
 
-        if not hasattr(cfg, 'preprocessor'):
-            logger.error('No preprocessor field found in cfg.')
+        if not hasattr(cfg, 'preprocessor') or len(cfg.preprocessor) == 0:
+            logger.warning('No preprocessor field found in cfg.')
             preprocessor_cfg = ConfigDict()
         else:
             preprocessor_cfg = cfg.preprocessor
@@ -217,13 +293,15 @@ class Preprocessor(ABC):
             if sub_key in preprocessor_cfg:
                 sub_cfg = getattr(preprocessor_cfg, sub_key)
             else:
-                logger.error(
+                logger.warning(
                     f'No {sub_key} key and type key found in '
                     f'preprocessor domain of configuration.json file.')
                 sub_cfg = preprocessor_cfg
         else:
             sub_cfg = preprocessor_cfg
 
+        # TODO @wenmeng.zwm refine this logic when preprocessor has no model_dir param
+        # for cv models.
         sub_cfg.update({'model_dir': model_dir})
         sub_cfg.update(kwargs)
         if 'type' in sub_cfg:
@@ -231,11 +309,10 @@ class Preprocessor(ABC):
                 # TODO: for Sequence, need adapt to `mode` and `mode_dir` args,
                 # and add mode for Compose or other plans
                 raise NotImplementedError('Not supported yet!')
-            sub_cfg = deepcopy(sub_cfg)
 
             preprocessor = build_preprocessor(sub_cfg, field_name)
         else:
-            logger.error(
+            logger.warning(
                 f'Cannot find available config to build preprocessor at mode {preprocessor_mode}, '
                 f'current config: {sub_cfg}. trying to build by task and model information.'
             )
@@ -243,13 +320,13 @@ class Preprocessor(ABC):
             model_type = model_cfg.type if hasattr(
                 model_cfg, 'type') else getattr(model_cfg, 'model_type', None)
             if task is None or model_type is None:
-                logger.error(
+                logger.warning(
                     f'Find task: {task}, model type: {model_type}. '
                     f'Insufficient information to build preprocessor, skip building preprocessor'
                 )
                 return None
             if (model_type, task) not in PREPROCESSOR_MAP:
-                logger.error(
+                logger.warning(
                     f'No preprocessor key {(model_type, task)} found in PREPROCESSOR_MAP, '
                     f'skip building preprocessor.')
                 return None
@@ -260,4 +337,43 @@ class Preprocessor(ABC):
             })
             preprocessor = build_preprocessor(sub_cfg, field_name)
         preprocessor.mode = preprocessor_mode
+        sub_cfg.pop('model_dir', None)
+        if not hasattr(preprocessor, 'cfg'):
+            preprocessor.cfg = cfg
         return preprocessor
+
+    def save_pretrained(self,
+                        target_folder: Union[str, os.PathLike],
+                        config: Optional[dict] = None,
+                        save_config_function: Callable = None):
+        """Save the preprocessor, its configuration and other related files to a directory,
+            so that it can be re-loaded
+
+        By default, this method will save the preprocessor's config with mode `inference`.
+
+        Args:
+            target_folder (Union[str, os.PathLike]):
+                Directory to which to save. Will be created if it doesn't exist.
+
+            config (Optional[dict], optional):
+                The config for the configuration.json
+
+            save_config_function (Callable): The function used to save the configuration, call this function
+                after the config is updated.
+        """
+        if config is None and hasattr(self, 'cfg'):
+            config = self.cfg
+
+        if config is not None:
+            # Update the mode to `inference` in the preprocessor field.
+            if 'preprocessor' in config and config['preprocessor'] is not None:
+                if 'mode' in config['preprocessor']:
+                    config['preprocessor']['mode'] = 'inference'
+                elif 'val' in config['preprocessor'] and 'mode' in config[
+                        'preprocessor']['val']:
+                    config['preprocessor']['val']['mode'] = 'inference'
+
+            if save_config_function is None:
+                from modelscope.utils.checkpoint import save_configuration
+                save_config_function = save_configuration
+            save_config_function(target_folder, config)

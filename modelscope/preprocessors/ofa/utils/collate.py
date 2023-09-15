@@ -1,10 +1,15 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 
+from typing import List
+
 import numpy as np
 import torch
 
 
 def collate_fn(samples, pad_idx, eos_idx):
+    r"""
+    convert the sample to batch tensor.
+    """
     if len(samples) == 0:
         return {}
 
@@ -13,16 +18,14 @@ def collate_fn(samples, pad_idx, eos_idx):
                               pad_idx,
                               eos_idx=eos_idx)
 
-    src_tokens = merge('source')
-
     batch = {
         'nsentences': len(samples),
-        'net_input': {
-            'input_ids': src_tokens,
-        },
+        'net_input': {},
     }
+    if samples[0].get('source', None) is not None:
+        batch['net_input']['input_ids'] = merge('source')
     if samples[0].get('id', None) is not None:
-        batch['id'] = np.array([s.get['id'] for s in samples])
+        batch['id'] = np.array([s.get('id') for s in samples])
     if samples[0].get('target', None) is not None:
         batch['target'] = merge('target')
         tgt_lengths = torch.LongTensor(
@@ -70,6 +73,38 @@ def collate_fn(samples, pad_idx, eos_idx):
             [s['region_coord'] for s in samples], dim=0)
     if samples[0].get('sample', None) is not None:
         batch['samples'] = [s['sample'] for s in samples]
+    # For asr
+    if samples[0].get('fbank', None) is not None:
+        batch['net_input']['fbank'] = _collate_frames(
+            [s['fbank'] for s in samples])
+        batch['net_input']['fbank_length'] = torch.tensor(
+            [s['fbank'].size(0) for s in samples], dtype=torch.long)
+    if samples[0].get('fbank_mask', None) is not None:
+        batch['net_input']['fbank_masks'] = torch.cat(
+            [s['fbank_mask'] for s in samples])
+    if samples[0].get('phone_item', None) is not None:
+        batch['net_input']['phone_items'] = merge('phone_item')
+        batch['net_input']['phone_masks'] = torch.cat(
+            [s['phone_mask'] for s in samples])
+    if samples[0].get('phone_target', None) is not None:
+        batch['phone_target'] = merge('phone_target')
+        batch['phone_length'] = torch.tensor(
+            [s['phone_target'].size(0) for s in samples], dtype=torch.long)
+
+    # for sudoku
+    if samples[0].get('db_struct', None) is not None:
+        db_struct = [sample['db_struct'] for sample in samples]
+        batch['db_struct'] = db_struct
+    if samples[0].get('mask_ratio', None) is not None:
+        mask_ratio = [sample['mask_ratio'] for sample in samples]
+        batch['mask_ratio'] = mask_ratio
+    if samples[0].get('seg_col_tokens', None) is not None:
+        seg_col_tokens = merge('seg_col_tokens')
+        batch['net_input']['seg_col_tokens'] = seg_col_tokens
+    if samples[0].get('seg_row_tokens', None) is not None:
+        seg_row_tokens = merge('seg_row_tokens')
+        batch['net_input']['seg_row_tokens'] = seg_row_tokens
+
     return batch
 
 
@@ -113,3 +148,19 @@ def collate_tokens(
     for i, v in enumerate(values):
         copy_tensor(v, res[i][size - len(v):] if left_pad else res[i][:len(v)])
     return res
+
+
+def _collate_frames(frames: List[torch.Tensor]):
+    """
+    Convert a list of 2D frames into a padded 3D tensor
+    Args:
+        frames (list): list of 2D frames of size L[i]*f_dim. Where L[i] is
+            length of i-th frame and f_dim is static dimension of features
+    Returns:
+        3D tensor of size len(frames)*len_max*f_dim where len_max is max of L[i]
+    """
+    max_len = max(frame.size(0) for frame in frames)
+    out = frames[0].new_zeros((len(frames), max_len, frames[0].size(1)))
+    for i, v in enumerate(frames):
+        out[i, :v.size(0)] = v
+    return out

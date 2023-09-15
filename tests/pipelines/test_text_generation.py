@@ -6,13 +6,14 @@ from modelscope.models import Model
 from modelscope.models.nlp import GPT3ForTextGeneration, PalmForTextGeneration
 from modelscope.pipelines import pipeline
 from modelscope.pipelines.nlp import TextGenerationPipeline
-from modelscope.preprocessors import TextGenerationPreprocessor
+from modelscope.preprocessors import TextGenerationTransformersPreprocessor
 from modelscope.utils.constant import Tasks
-from modelscope.utils.demo_utils import DemoCompatibilityCheck
+from modelscope.utils.streaming_output import (StreamingOutputMixin,
+                                               add_stream_generate)
 from modelscope.utils.test_utils import test_level
 
 
-class TextGenerationTest(unittest.TestCase, DemoCompatibilityCheck):
+class TextGenerationTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.palm_model_id_zh_base = 'damo/nlp_palm2.0_text-generation_chinese-base'
@@ -42,9 +43,14 @@ class TextGenerationTest(unittest.TestCase, DemoCompatibilityCheck):
         self.gpt3_input = '《故乡》。深蓝的天空中挂着一轮金黄的圆月，下面是海边的沙地，'
         self.gpt3_poetry_input = '天生我材必有用，'
 
+        self.llama_model_id = 'skyline2006/llama-7b'
+        self.llama_input = 'My name is Merve and my favorite'
+        self.seqgpt_model_id = 'damo/nlp_seqgpt-560m'
+        self.ecomgpt_model_id = 'damo/nlp_ecomgpt_multilingual-7B-ecom'
+
     def run_pipeline_with_model_instance(self, model_id, input):
         model = Model.from_pretrained(model_id)
-        preprocessor = TextGenerationPreprocessor(
+        preprocessor = TextGenerationTransformersPreprocessor(
             model.model_dir,
             model.tokenizer,
             first_sequence='sentence',
@@ -53,14 +59,62 @@ class TextGenerationTest(unittest.TestCase, DemoCompatibilityCheck):
             task=Tasks.text_generation, model=model, preprocessor=preprocessor)
         print(pipeline_ins(input))
 
-    def run_pipeline_with_model_id(self, model_id, input):
-        pipeline_ins = pipeline(task=Tasks.text_generation, model=model_id)
-        print(pipeline_ins(input))
+    def run_pipeline_with_model_id(self,
+                                   model_id,
+                                   input,
+                                   init_kwargs={},
+                                   run_kwargs={}):
+        pipeline_ins = pipeline(
+            task=Tasks.text_generation, model=model_id, **init_kwargs)
+        print(pipeline_ins(input, **run_kwargs))
+
+    def run_streaming_pipeline_with_model_id(self,
+                                             model_id,
+                                             input,
+                                             init_kwargs={},
+                                             run_kwargs={}):
+        pipeline_ins = pipeline(
+            task=Tasks.text_generation, model=model_id, **init_kwargs)
+
+        # set stream inputs
+        assert isinstance(pipeline_ins, StreamingOutputMixin)
+        for output in pipeline_ins.stream_generate(input, **run_kwargs):
+            print(output, end='\r')
+        print()
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_palm_zh_base_with_model_name(self):
         self.run_pipeline_with_model_id(self.palm_model_id_zh_base,
                                         self.palm_input_zh)
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_palm_zh_base_with_model_name_with_args(self):
+        self.run_pipeline_with_model_id(
+            self.palm_model_id_zh_base,
+            self.palm_input_zh,
+            run_kwargs={
+                'top_p': 0.9,
+                'temperature': 0.9,
+                'max_length': 64
+            })
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_palm_zh_base_with_model_name_batch(self):
+        self.run_pipeline_with_model_id(
+            self.palm_model_id_zh_base, [
+                self.palm_input_zh, self.palm_input_zh[:10],
+                self.palm_input_zh[10:]
+            ],
+            run_kwargs={'batch_size': 2})
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_palm_zh_base_with_model_name_batch_iter(self):
+        self.run_pipeline_with_model_id(
+            self.palm_model_id_zh_base, [
+                self.palm_input_zh, self.palm_input_zh[:10],
+                self.palm_input_zh[10:]
+            ],
+            init_kwargs={'padding': False})
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_palm_en_with_model_name(self):
@@ -73,9 +127,63 @@ class TextGenerationTest(unittest.TestCase, DemoCompatibilityCheck):
                                         self.gpt3_input)
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_gpt_base_with_model_name_with_args(self):
+        self.run_pipeline_with_model_id(
+            self.gpt3_base_model_id,
+            self.gpt3_input,
+            run_kwargs={
+                'top_p': 0.9,
+                'temperature': 0.9,
+                'max_length': 64
+            })
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_gpt_base_with_model_name_batch(self):
+        self.run_pipeline_with_model_id(
+            self.gpt3_base_model_id,
+            [self.gpt3_input, self.gpt3_input[:10], self.gpt3_input[10:]],
+            run_kwargs={'batch_size': 2})
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_gpt_base_with_model_name_with_streaming(self):
+        self.run_streaming_pipeline_with_model_id(
+            self.gpt3_base_model_id,
+            self.gpt3_input,
+            run_kwargs={'max_length': 64})
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_gpt_base_with_model_name_with_streaming_batch(self):
+        self.run_streaming_pipeline_with_model_id(
+            self.gpt3_base_model_id,
+            [self.gpt3_input, self.gpt3_input[:10], self.gpt3_input[10:]],
+            run_kwargs={
+                'batch_size': 2,
+                'max_length': 32
+            })
+
+    @unittest.skipUnless(test_level() >= 1, 'skip test in current test level')
+    def test_gpt_base_with_model_name_batch_iter(self):
+        self.run_pipeline_with_model_id(
+            self.gpt3_base_model_id,
+            [self.gpt3_input, self.gpt3_input[:10], self.gpt3_input[10:]])
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_gpt_large_with_model_name(self):
         self.run_pipeline_with_model_id(self.gpt3_large_model_id,
                                         self.gpt3_input)
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_hf_model_stream_generate(self):
+        from transformers import AutoTokenizer, GPT2LMHeadModel
+        tokenizer = AutoTokenizer.from_pretrained('gpt2')
+        model = GPT2LMHeadModel.from_pretrained('gpt2')
+        model = add_stream_generate(model)
+        inputs = tokenizer(self.llama_input, return_tensors='pt')
+        output1 = model.generate(**inputs)
+        output2 = None
+        for tensor in model.stream_generate(**inputs):
+            output2 = tensor
+        self.assertTrue(output1.equal(output2))
 
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_palm_zh_large_with_model_name(self):
@@ -144,11 +252,8 @@ class TextGenerationTest(unittest.TestCase, DemoCompatibilityCheck):
                                                        self.palm_input_en)):
             cache_path = snapshot_download(model_id)
             model = PalmForTextGeneration.from_pretrained(cache_path)
-            preprocessor = TextGenerationPreprocessor(
-                cache_path,
-                model.tokenizer,
-                first_sequence='sentence',
-                second_sequence=None)
+            preprocessor = TextGenerationTransformersPreprocessor(
+                cache_path, first_sequence='sentence', second_sequence=None)
             pipeline1 = TextGenerationPipeline(model, preprocessor)
             pipeline2 = pipeline(
                 Tasks.text_generation, model=model, preprocessor=preprocessor)
@@ -160,7 +265,7 @@ class TextGenerationTest(unittest.TestCase, DemoCompatibilityCheck):
     def test_run_gpt3(self):
         cache_path = snapshot_download(self.gpt3_base_model_id)
         model = GPT3ForTextGeneration(cache_path)
-        preprocessor = TextGenerationPreprocessor(
+        preprocessor = TextGenerationTransformersPreprocessor(
             cache_path,
             model.tokenizer,
             first_sequence='sentence',
@@ -175,7 +280,10 @@ class TextGenerationTest(unittest.TestCase, DemoCompatibilityCheck):
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_run_with_default_model(self):
         pipeline_ins = pipeline(task=Tasks.text_generation)
-        print(pipeline_ins(self.palm_input_zh))
+        print(
+            pipeline_ins(
+                [self.palm_input_zh, self.palm_input_zh, self.palm_input_zh],
+                batch_size=2))
 
     @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
     def test_bloom(self):
@@ -196,9 +304,44 @@ class TextGenerationTest(unittest.TestCase, DemoCompatibilityCheck):
                 max_length=20,
                 repetition_penalty=0.5))
 
-    @unittest.skip('demo compatibility test is only enabled on a needed-basis')
-    def test_demo_compatibility(self):
-        self.compatibility_check()
+    @unittest.skipUnless(test_level() >= 2, 'skip test in current test level')
+    def test_gpt2(self):
+        pipe = pipeline(
+            task=Tasks.text_generation,
+            model='damo/nlp_gpt2_text-generation_english-base')
+        print(pipe('My name is Teven and I am'))
+
+    @unittest.skip('oom error for 7b model')
+    def test_llama_with_model_name(self):
+        self.run_pipeline_with_model_id(self.llama_model_id, self.llama_input)
+
+    @unittest.skip('oom error for 7b model')
+    def test_llama_with_model_name_with_streaming(self):
+        self.run_streaming_pipeline_with_model_id(
+            self.llama_model_id,
+            self.llama_input,
+            run_kwargs={'max_length': 64})
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_seqgpt_with_model_name(self):
+        inputs = {'task': '抽取', 'text': '杭州欢迎你。', 'labels': '地名'}
+        PROMPT_TEMPLATE = '输入: {text}\n{task}: {labels}\n输出: '
+        prompt = PROMPT_TEMPLATE.format(**inputs)
+        self.run_pipeline_with_model_id(
+            self.seqgpt_model_id, prompt, run_kwargs={'gen_token': '[GEN]'})
+
+    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    def test_ecomgpt_with_model_name(self):
+        PROMPT_TEMPLATE = 'Below is an instruction that describes a task. ' + \
+                          'Write a response that appropriately completes the request.\n\n' + \
+                          '### Instruction:\n{text}\n{instruction}\n\n### Response:'
+        inputs = {
+            'instruction':
+            'Classify the sentence, select from the candidate labels: product, brand',
+            'text': '照相机'
+        }
+        prompt = PROMPT_TEMPLATE.format(**inputs)
+        self.run_pipeline_with_model_id(self.ecomgpt_model_id, prompt)
 
 
 if __name__ == '__main__':

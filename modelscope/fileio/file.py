@@ -84,7 +84,8 @@ class LocalStorage(Storage):
         """
         dirname = os.path.dirname(filepath)
         if dirname and not os.path.exists(dirname):
-            os.makedirs(dirname)
+            os.makedirs(dirname, exist_ok=True)
+
         with open(filepath, 'wb') as f:
             f.write(obj)
 
@@ -106,7 +107,8 @@ class LocalStorage(Storage):
         """
         dirname = os.path.dirname(filepath)
         if dirname and not os.path.exists(dirname):
-            os.makedirs(dirname)
+            os.makedirs(dirname, exist_ok=True)
+
         with open(filepath, 'w', encoding=encoding) as f:
             f.write(obj)
 
@@ -138,7 +140,7 @@ class HTTPStorage(Storage):
             self, filepath: str) -> Generator[Union[str, Path], None, None]:
         """Download a file from ``filepath``.
 
-        ``as_local_path`` is decorated by :meth:`contxtlib.contextmanager`. It
+        ``as_local_path`` is decorated by :meth:`contextlib.contextmanager`. It
         can be called with ``with`` statement, and when exists from the
         ``with`` statement, the temporary path will be released.
 
@@ -192,7 +194,7 @@ class OSSStorage(Storage):
             self, filepath: str) -> Generator[Union[str, Path], None, None]:
         """Download a file from ``filepath``.
 
-        ``as_local_path`` is decorated by :meth:`contxtlib.contextmanager`. It
+        ``as_local_path`` is decorated by :meth:`contextlib.contextmanager`. It
         can be called with ``with`` statement, and when exists from the
         ``with`` statement, the temporary path will be released.
 

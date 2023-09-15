@@ -1,5 +1,5 @@
 """
-The implementation here is modified based on insightface, originally MIT license and publicly avaialbe at
+The implementation here is modified based on insightface, originally MIT license and publicly available at
 https://github.com/deepinsight/insightface/tree/master/detection/scrfd/mmdet/models/backbones/resnet.py
 """
 import torch.nn as nn
@@ -51,7 +51,8 @@ class ResNet(nn.Module):
         zero_init_residual (bool): Whether to use zero init for last norm layer
             in resblocks to let them behave as identity.
 
-    Example:
+    Examples:
+
         >>> from mmdet.models import ResNet
         >>> import torch
         >>> self = ResNet(depth=18)

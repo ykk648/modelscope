@@ -38,9 +38,9 @@ class WavToScp(Preprocessor):
                            audio_in, audio_fs)
         return out
 
-    def forward(self, model: Dict[str,
-                                  Any], recog_type: str, audio_format: str,
-                audio_in: Union[str, bytes], audio_fs: int) -> Dict[str, Any]:
+    def forward(self, model: Dict[str, Any], recog_type: str,
+                audio_format: str, audio_in: Union[str, bytes], audio_fs: int,
+                cmd: Dict[str, Any]) -> Dict[str, Any]:
         assert len(recog_type) > 0, 'preprocess recog_type is empty'
         assert len(audio_format) > 0, 'preprocess audio_format is empty'
         assert len(
@@ -56,39 +56,26 @@ class WavToScp(Preprocessor):
         assert len(model['model_config']
                    ) > 0, 'preprocess model[model_config] is empty'
 
-        rst = {
-            # the recognition model dir path
-            'model_workspace': model['model_workspace'],
-            # the am model name
-            'am_model': model['am_model'],
-            # the am model file path
-            'am_model_path': model['am_model_path'],
-            # the asr type setting, eg: test dev train wav
-            'recog_type': recog_type,
-            # the asr audio format setting, eg: wav, pcm, kaldi_ark, tfrecord
-            'audio_format': audio_format,
-            # the recognition model config dict
-            'model_config': model['model_config'],
-            # the sample rate of audio_in
-            'audio_fs': audio_fs
-        }
+        cmd['model_workspace'] = model['model_workspace']
+        cmd['am_model'] = model['am_model']
+        cmd['am_model_path'] = model['am_model_path']
+        cmd['recog_type'] = recog_type
+        cmd['audio_format'] = audio_format
+        cmd['model_config'] = model['model_config']
+        cmd['audio_fs'] = audio_fs
+        if 'code_base' in cmd['model_config']:
+            code_base = cmd['model_config']['code_base']
+        else:
+            code_base = None
 
         if isinstance(audio_in, str):
             # wav file path or the dataset path
-            rst['wav_path'] = audio_in
+            cmd['wav_path'] = audio_in
+        if code_base != 'funasr':
+            cmd = self.config_checking(cmd)
+        cmd = self.env_setting(cmd)
 
-        out = self.config_checking(rst)
-        out = self.env_setting(out)
-        if audio_format == 'wav':
-            out['audio_lists'] = self.scp_generation_from_wav(out)
-        elif audio_format == 'kaldi_ark':
-            out['audio_lists'] = self.scp_generation_from_ark(out)
-        elif audio_format == 'tfrecord':
-            out['audio_lists'] = os.path.join(out['wav_path'], 'data.records')
-        elif audio_format == 'pcm':
-            out['audio_lists'] = audio_in
-
-        return out
+        return cmd
 
     def config_checking(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """config checking
@@ -97,41 +84,79 @@ class WavToScp(Preprocessor):
         assert inputs['model_config'].__contains__(
             'type'), 'model type does not exist'
         inputs['model_type'] = inputs['model_config']['type']
+        # code base
+        if 'code_base' in inputs['model_config']:
+            code_base = inputs['model_config']['code_base']
+        else:
+            code_base = None
+        inputs['code_base'] = code_base
+        # decoding mode
+        if 'mode' in inputs['model_config']:
+            mode = inputs['model_config']['mode']
+        else:
+            mode = None
+        inputs['mode'] = mode
 
         if inputs['model_type'] == Frameworks.torch:
             assert inputs['model_config'].__contains__(
                 'batch_size'), 'batch_size does not exist'
-            assert inputs['model_config'].__contains__(
-                'am_model_config'), 'am_model_config does not exist'
-            assert inputs['model_config'].__contains__(
-                'asr_model_config'), 'asr_model_config does not exist'
-            assert inputs['model_config'].__contains__(
-                'asr_model_wav_config'), 'asr_model_wav_config does not exist'
 
-            am_model_config: str = os.path.join(
-                inputs['model_workspace'],
-                inputs['model_config']['am_model_config'])
-            assert os.path.exists(
-                am_model_config), 'am_model_config does not exist'
-            inputs['am_model_config'] = am_model_config
-
-            asr_model_config: str = os.path.join(
-                inputs['model_workspace'],
-                inputs['model_config']['asr_model_config'])
-            assert os.path.exists(
-                asr_model_config), 'asr_model_config does not exist'
-
-            asr_model_wav_config: str = os.path.join(
-                inputs['model_workspace'],
-                inputs['model_config']['asr_model_wav_config'])
-            assert os.path.exists(
-                asr_model_wav_config), 'asr_model_wav_config does not exist'
-
-            if inputs['audio_format'] == 'wav' or inputs[
-                    'audio_format'] == 'pcm':
-                inputs['asr_model_config'] = asr_model_wav_config
+            if inputs['model_config'].__contains__('am_model_config'):
+                am_model_config = os.path.join(
+                    inputs['model_workspace'],
+                    inputs['model_config']['am_model_config'])
+                assert os.path.exists(
+                    am_model_config), 'am_model_config does not exist'
+                inputs['am_model_config'] = am_model_config
             else:
+                inputs['am_model_config'] = ''
+            if inputs['model_config'].__contains__('asr_model_config'):
+                asr_model_config = os.path.join(
+                    inputs['model_workspace'],
+                    inputs['model_config']['asr_model_config'])
+                assert os.path.exists(
+                    asr_model_config), 'asr_model_config does not exist'
                 inputs['asr_model_config'] = asr_model_config
+            else:
+                asr_model_config = ''
+                inputs['asr_model_config'] = ''
+
+            if 'asr_model_wav_config' in inputs['model_config']:
+                asr_model_wav_config: str = os.path.join(
+                    inputs['model_workspace'],
+                    inputs['model_config']['asr_model_wav_config'])
+                assert os.path.exists(asr_model_wav_config
+                                      ), 'asr_model_wav_config does not exist'
+            else:
+                asr_model_wav_config: str = inputs['asr_model_config']
+
+            # the lm model file path
+            if 'lm_model_name' in inputs['model_config']:
+                lm_model_path = os.path.join(
+                    inputs['model_workspace'],
+                    inputs['model_config']['lm_model_name'])
+            else:
+                lm_model_path = None
+            # the lm config file path
+            if 'lm_model_config' in inputs['model_config']:
+                lm_model_config = os.path.join(
+                    inputs['model_workspace'],
+                    inputs['model_config']['lm_model_config'])
+            else:
+                lm_model_config = None
+            if lm_model_path and lm_model_config and os.path.exists(
+                    lm_model_path) and os.path.exists(lm_model_config):
+                inputs['lm_model_path'] = lm_model_path
+                inputs['lm_model_config'] = lm_model_config
+            else:
+                inputs['lm_model_path'] = None
+                inputs['lm_model_config'] = None
+            if 'audio_format' in inputs:
+                if inputs['audio_format'] == 'wav' or inputs[
+                        'audio_format'] == 'pcm':
+                    inputs['asr_model_config'] = asr_model_wav_config
+                else:
+                    inputs['asr_model_config'] = asr_model_config
 
             if inputs['model_config'].__contains__('mvn_file'):
                 mvn_file = os.path.join(inputs['model_workspace'],
@@ -202,63 +227,4 @@ class WavToScp(Preprocessor):
             inputs['model_lang'] = inputs['model_config']['lang']
         else:
             inputs['model_lang'] = 'zh-cn'
-
         return inputs
-
-    def scp_generation_from_wav(self, inputs: Dict[str, Any]) -> List[Any]:
-        """scp generation from waveform files
-        """
-        from easyasr.common import asr_utils
-
-        # find all waveform files
-        wav_list = []
-        if inputs['recog_type'] == 'wav':
-            file_path = inputs['wav_path']
-            if os.path.isfile(file_path):
-                if file_path.endswith('.wav') or file_path.endswith('.WAV'):
-                    wav_list.append(file_path)
-        else:
-            wav_dir: str = inputs['wav_path']
-            wav_list = asr_utils.recursion_dir_all_wav(wav_list, wav_dir)
-
-        list_count: int = len(wav_list)
-        inputs['wav_count'] = list_count
-
-        # store all wav into audio list
-        audio_lists = []
-        j: int = 0
-        while j < list_count:
-            wav_file = wav_list[j]
-            wave_key: str = os.path.splitext(os.path.basename(wav_file))[0]
-            item = {'key': wave_key, 'file': wav_file}
-            audio_lists.append(item)
-            j += 1
-
-        return audio_lists
-
-    def scp_generation_from_ark(self, inputs: Dict[str, Any]) -> List[Any]:
-        """scp generation from kaldi ark file
-        """
-
-        ark_scp_path = os.path.join(inputs['wav_path'], 'data.scp')
-        ark_file_path = os.path.join(inputs['wav_path'], 'data.ark')
-        assert os.path.exists(ark_scp_path), 'data.scp does not exist'
-        assert os.path.exists(ark_file_path), 'data.ark does not exist'
-
-        with open(ark_scp_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-
-        # store all ark item into audio list
-        audio_lists = []
-        for line in lines:
-            outs = line.strip().split(' ')
-            if len(outs) == 2:
-                key = outs[0]
-                sub = outs[1].split(':')
-                if len(sub) == 2:
-                    nums = sub[1]
-                    content = ark_file_path + ':' + nums
-                    item = {'key': key, 'file': content}
-                    audio_lists.append(item)
-
-        return audio_lists

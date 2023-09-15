@@ -6,30 +6,46 @@ from modelscope.utils.import_utils import LazyImportModule
 if TYPE_CHECKING:
 
     from .clip import CLIPForMultiModalEmbedding
-    from .gemm import GEMMForMultiModalEmbedding
-    from .team import TEAMForMultiModalSimilarity
+    from .clip_interrogator import CLIP_Interrogator
     from .diffusion import DiffusionForTextToImageSynthesis
+    from .efficient_diffusion_tuning import EfficientStableDiffusion
+    from .gemm import GEMMForMultiModalEmbedding
     from .mmr import VideoCLIPForMultiModalEmbedding
-    from .mplug_for_all_tasks import MPlugForAllTasks
+    from .mplug_for_all_tasks import HiTeAForAllTasks, MPlugForAllTasks
+    from .mplug_owl import MplugOwlForConditionalGeneration
+    from .multi_stage_diffusion import \
+        MultiStageDiffusionForTextToImageSynthesis
     from .ofa_for_all_tasks import OfaForAllTasks
     from .ofa_for_text_to_image_synthesis_model import \
         OfaForTextToImageSynthesis
-    from .multi_stage_diffusion import \
-        MultiStageDiffusionForTextToImageSynthesis
+    from .prost import ProSTForTVRetrieval
+    from .rleg import RLEGForMultiModalEmbedding
+    from .team import TEAMForMultiModalSimilarity
+    from .video_synthesis import TextToVideoSynthesis
+    from .vldoc import VLDocForDocVLEmbedding
+    from .videocomposer import VideoComposer
 
 else:
     _import_structure = {
         'clip': ['CLIPForMultiModalEmbedding'],
         'diffusion': ['DiffusionForTextToImageSynthesis'],
         'gemm': ['GEMMForMultiModalEmbedding'],
+        'rleg': ['RLEGForMultiModalEmbedding'],
         'team': ['TEAMForMultiModalSimilarity'],
         'mmr': ['VideoCLIPForMultiModalEmbedding'],
-        'mplug_for_all_tasks': ['MPlugForAllTasks'],
+        'prost': ['ProSTForTVRetrieval'],
+        'mplug_for_all_tasks': ['MPlugForAllTasks', 'HiTeAForAllTasks'],
         'ofa_for_all_tasks': ['OfaForAllTasks'],
         'ofa_for_text_to_image_synthesis_model':
         ['OfaForTextToImageSynthesis'],
         'multi_stage_diffusion':
-        ['MultiStageDiffusionForTextToImageSynthesis']
+        ['MultiStageDiffusionForTextToImageSynthesis'],
+        'vldoc': ['VLDocForDocVLEmbedding'],
+        'video_synthesis': ['TextToVideoSynthesis'],
+        'efficient_diffusion_tuning': ['EfficientStableDiffusion'],
+        'mplug_owl': ['MplugOwlForConditionalGeneration'],
+        'clip_interrogator': ['CLIP_Interrogator'],
+        'videocomposer': ['VideoComposer'],
     }
 
     import sys

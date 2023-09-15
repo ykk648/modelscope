@@ -35,7 +35,9 @@ class VideoCLIPForMultiModalEmbedding(TorchModel):
     def __init__(self, model_dir, **kwargs):
         super().__init__(model_dir=model_dir, **kwargs)
         # model config parameters
-        with open(f'{model_dir}/{ModelFile.CONFIGURATION}', 'r') as json_file:
+        with open(
+                f'{model_dir}/{ModelFile.CONFIGURATION}', 'r',
+                encoding='utf-8') as json_file:
             model_config = json.load(json_file)
         model_config = model_config['paras']
         model_config['model_dir'] = model_dir
@@ -126,13 +128,13 @@ class VideoCLIPForMultiModalEmbedding(TorchModel):
                           local_transform,
                           s=None,
                           e=None):
-        video_mask = np.zeros(self.max_frames, dtype=np.long)
+        video_mask = np.zeros(self.max_frames, dtype=int)
         max_video_length = 0
 
         # T x 3 x H x W
         video = np.zeros((self.max_frames, 3, rawVideoExtractor.size,
                           rawVideoExtractor.size),
-                         dtype=np.float)
+                         dtype=float)
 
         if s is None:
             start_time, end_time = None, None

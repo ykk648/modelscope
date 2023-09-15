@@ -11,11 +11,38 @@ import torch
 from modelscope.fileio import File
 from modelscope.preprocessors import Preprocessor
 from modelscope.preprocessors.builder import PREPROCESSORS
-from modelscope.utils.constant import Fields
+from modelscope.utils.constant import Fields, ModeKeys
+
+
+class AudioBrainPreprocessor(Preprocessor):
+    """A preprocessor takes audio file path and reads it into tensor
+
+    Args:
+        takes: the audio file field name
+        provides: the tensor field name
+        mode: process mode, default 'inference'
+    """
+
+    def __init__(self,
+                 takes: str,
+                 provides: str,
+                 mode=ModeKeys.INFERENCE,
+                 *args,
+                 **kwargs):
+        super(AudioBrainPreprocessor, self).__init__(mode, *args, **kwargs)
+        self.takes = takes
+        self.provides = provides
+        import speechbrain as sb
+        self.read_audio = sb.dataio.dataio.read_audio
+
+    def __call__(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        result = self.read_audio(data[self.takes])
+        data[self.provides] = result
+        return data
 
 
 def load_kaldi_feature_transform(filename):
-    fp = open(filename, 'r')
+    fp = open(filename, 'r', encoding='utf-8')
     all_str = fp.read()
     pos1 = all_str.find('AddShift')
     pos2 = all_str.find('[', pos1)

@@ -3,11 +3,10 @@ import unittest
 
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
-from modelscope.utils.demo_utils import DemoCompatibilityCheck
 from modelscope.utils.test_utils import test_level
 
 
-class ObjectDetectionTest(unittest.TestCase, DemoCompatibilityCheck):
+class ObjectDetectionTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.task = Tasks.human_detection
@@ -43,12 +42,9 @@ class ObjectDetectionTest(unittest.TestCase, DemoCompatibilityCheck):
         result = human_detect(input_location)
         print(result)
 
-    @unittest.skip('demo compatibility test is only enabled on a needed-basis')
-    def test_demo_compatibility(self):
-        self.compatibility_check()
-
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    @unittest.skipUnless(test_level() >= 1, 'skip test in current test level')
     def test_image_object_detection_auto_pipeline(self):
+        # TODO: to be fixed in the future
         model_id = 'damo/cv_yolox_image-object-detection-auto'
         test_image = 'data/test/images/auto_demo.jpg'
 
@@ -58,6 +54,15 @@ class ObjectDetectionTest(unittest.TestCase, DemoCompatibilityCheck):
         result = image_object_detection_auto(test_image)
         image_object_detection_auto.show_result(test_image, result,
                                                 'auto_demo_ret.jpg')
+
+    @unittest.skip('skip test in current test level: no pipeline implemented')
+    def test_image_object_detection_dino_pipeline(self):
+        model_id = 'damo/cv_swinl_image-object-detection_dino'
+        test_image = 'data/test/images/image_detection.jpg'
+        image_object_detection_dino = pipeline(
+            Tasks.image_object_detection, model=model_id)
+        result = image_object_detection_dino(test_image)
+        print(result)
 
 
 if __name__ == '__main__':

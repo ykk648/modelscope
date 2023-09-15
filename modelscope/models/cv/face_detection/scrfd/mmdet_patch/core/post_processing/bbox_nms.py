@@ -1,5 +1,5 @@
 """
-The implementation here is modified based on insightface, originally MIT license and publicly avaialbe at
+The implementation here is modified based on insightface, originally MIT license and publicly available at
 https://github.com/deepinsight/insightface/tree/master/detection/scrfd/mmdet/core/post_processing/bbox_nms.py
 """
 import torch
@@ -54,7 +54,7 @@ def multiclass_nms(multi_bboxes,
     if score_factors is not None:
         scores = scores * score_factors[:, None]
 
-    labels = torch.arange(num_classes, dtype=torch.long)
+    labels = torch.arange(num_classes, dtype=torch.long, device=scores.device)
     labels = labels.view(1, -1).expand_as(scores)
 
     bboxes = bboxes.reshape(-1, 4)

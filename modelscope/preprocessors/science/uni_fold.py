@@ -201,7 +201,7 @@ def run_mmseqs2(
     a3m_lines = {}
     for a3m_file in a3m_files:
         update_M, M = True, None
-        with open(a3m_file, 'r') as f:
+        with open(a3m_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
             for line in lines:
                 if len(line) > 0:
@@ -458,7 +458,9 @@ class UniFoldPreprocessor(Preprocessor):
 
     def __call__(self, data: Union[str, Tuple]):
         if isinstance(data, str):
-            data = [data, '', '', '']
+            data = data.strip().split()
+            if len(data) < 4:
+                data = data + [''] * (4 - len(data))
         basejobname = ''.join(data)
         basejobname = re.sub(r'\W+', '', basejobname)
         target_id = self.add_hash(self.jobname, basejobname)
@@ -513,7 +515,7 @@ class UniFoldPreprocessor(Preprocessor):
             homooligomers_num=homooligomers_num)
 
         features = []
-        pair_features = []
+        pair_features_list = []
 
         for idx, seq in enumerate(unique_sequences):
             chain_id = PDB_CHAIN_IDS[idx]
@@ -549,12 +551,12 @@ class UniFoldPreprocessor(Preprocessor):
                     gzip.GzipFile(uniprot_output_path, 'wb'),
                     protocol=4,
                 )
-                pair_features.append(pair_feature_dict)
+                pair_features_list.append(pair_feature_dict)
 
         # return features, pair_features, target_id
         return {
             'features': features,
-            'pair_features': pair_features,
+            'pair_features': pair_features_list,
             'target_id': target_id,
             'is_multimer': is_multimer,
         }

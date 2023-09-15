@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from setuptools import find_packages, setup
 
+from modelscope.utils.ast_utils import generate_ast_template
 from modelscope.utils.constant import Fields
 
 
@@ -50,7 +51,7 @@ def get_hash():
 
 
 def get_version():
-    with open(version_file, 'r') as f:
+    with open(version_file, 'r', encoding='utf-8') as f:
         exec(compile(f.read(), version_file, 'exec'))
     return locals()['__version__']
 
@@ -82,7 +83,9 @@ def parse_requirements(fname='requirements.txt', with_version=True):
         if line.startswith('-r '):
             # Allow specifying requirements in other files
             target = line.split(' ')[1]
-            for info in parse_require_file(target):
+            relative_base = os.path.dirname(fname)
+            absolute_target = os.path.join(relative_base, target)
+            for info in parse_require_file(absolute_target):
                 yield info
         else:
             info = {'line': line}
@@ -109,7 +112,7 @@ def parse_requirements(fname='requirements.txt', with_version=True):
             yield info
 
     def parse_require_file(fpath):
-        with open(fpath, 'r') as f:
+        with open(fpath, 'r', encoding='utf-8') as f:
             for line in f.readlines():
                 line = line.strip()
                 if line.startswith('http'):
@@ -168,6 +171,7 @@ def pack_resource():
 
 if __name__ == '__main__':
     # write_version_py()
+    generate_ast_template()
     pack_resource()
     os.chdir('package')
     install_requires, deps_link = parse_requirements('requirements.txt')
@@ -184,33 +188,45 @@ if __name__ == '__main__':
         # result in mac/windows compatibility problems
         if field != Fields.audio:
             all_requires.append(extra_requires[field])
-
+    for subfiled in ['asr', 'kws', 'signal', 'tts']:
+        filed_name = f'audio_{subfiled}'
+        extra_requires[filed_name], _ = parse_requirements(
+            f'requirements/audio/{filed_name}.txt')
     extra_requires['all'] = all_requires
 
     setup(
         name='modelscope',
         version=get_version(),
-        description='',
+        description=
+        'ModelScope: bring the notion of Model-as-a-Service to life.',
         long_description=readme(),
         long_description_content_type='text/markdown',
-        author='Alibaba ModelScope team',
-        author_email='modelscope@list.alibaba-inc.com',
-        keywords='',
-        url='TBD',
-        packages=find_packages(exclude=('configs', 'tools', 'demo')),
+        author='ModelScope team',
+        author_email='contact@modelscope.cn',
+        keywords='python,nlp,science,cv,speech,multi-modal',
+        url='https://github.com/modelscope/modelscope',
+        packages=find_packages(exclude=('configs', 'demo')),
         include_package_data=True,
+        package_data={
+            '': ['*.h', '*.cpp', '*.cu'],
+        },
         classifiers=[
             'Development Status :: 4 - Beta',
             'License :: OSI Approved :: Apache Software License',
             'Operating System :: OS Independent',
             'Programming Language :: Python :: 3',
-            'Programming Language :: Python :: 3.5',
-            'Programming Language :: Python :: 3.6',
             'Programming Language :: Python :: 3.7',
+            'Programming Language :: Python :: 3.8',
+            'Programming Language :: Python :: 3.9',
+            'Programming Language :: Python :: 3.10',
+            'Programming Language :: Python :: 3.11',
         ],
         license='Apache License 2.0',
         tests_require=parse_requirements('requirements/tests.txt'),
         install_requires=install_requires,
         extras_require=extra_requires,
+        entry_points={
+            'console_scripts': ['modelscope=modelscope.cli.cli:run_cmd']
+        },
         dependency_links=deps_link,
         zip_safe=False)

@@ -19,6 +19,7 @@ class MTTR(nn.Module):
                  num_queries,
                  mask_kernels_dim=8,
                  aux_loss=False,
+                 transformer_cfg_dir=None,
                  **kwargs):
         """
         Parameters:
@@ -29,7 +30,9 @@ class MTTR(nn.Module):
         """
         super().__init__()
         self.backbone = init_backbone(**kwargs)
-        self.transformer = MultimodalTransformer(**kwargs)
+        assert transformer_cfg_dir is not None
+        self.transformer = MultimodalTransformer(
+            transformer_cfg_dir=transformer_cfg_dir, **kwargs)
         d_model = self.transformer.d_model
         self.is_referred_head = nn.Linear(
             d_model,
@@ -62,6 +65,7 @@ class MTTR(nn.Module):
         # keep only the valid frames (frames which are annotated):
         # (for example, in a2d-sentences only the center frame in each window is annotated).
         for layer_out in backbone_out:
+            valid_indices = valid_indices.to(layer_out.tensors.device)
             layer_out.tensors = layer_out.tensors.index_select(
                 0, valid_indices)
             layer_out.mask = layer_out.mask.index_select(0, valid_indices)

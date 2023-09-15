@@ -9,8 +9,9 @@ from modelscope.models import Model
 from modelscope.outputs import OutputKeys
 from modelscope.pipelines.base import Pipeline
 from modelscope.pipelines.builder import PIPELINES
-from modelscope.preprocessors import Preprocessor, TextRankingPreprocessor
-from modelscope.utils.constant import Tasks
+from modelscope.preprocessors import (Preprocessor,
+                                      TextRankingTransformersPreprocessor)
+from modelscope.utils.constant import ModelFile, Tasks
 
 __all__ = ['TextRankingPipeline']
 
@@ -22,6 +23,10 @@ class TextRankingPipeline(Pipeline):
     def __init__(self,
                  model: Union[Model, str],
                  preprocessor: Optional[Preprocessor] = None,
+                 config_file: str = None,
+                 device: str = 'gpu',
+                 auto_collate=True,
+                 sequence_length=128,
                  **kwargs):
         """Use `model` and `preprocessor` to create a nlp word segment pipeline for prediction.
 
@@ -30,16 +35,26 @@ class TextRankingPipeline(Pipeline):
             or a model id from the model hub, or a torch model instance.
             preprocessor (Preprocessor): An optional preprocessor instance, please make sure the preprocessor fits for
             the model if supplied.
-            sequence_length: Max sequence length in the user's custom scenario. 128 will be used as a default value.
+            kwargs (dict, `optional`):
+                Extra kwargs passed into the preprocessor's constructor.
         """
-        model = Model.from_pretrained(model) if isinstance(model,
-                                                           str) else model
+        super().__init__(
+            model=model,
+            preprocessor=preprocessor,
+            config_file=config_file,
+            device=device,
+            auto_collate=auto_collate,
+            compile=kwargs.pop('compile', False),
+            compile_options=kwargs.pop('compile_options', {}))
+
+        assert isinstance(self.model, Model), \
+            f'please check whether model config exists in {ModelFile.CONFIGURATION}'
 
         if preprocessor is None:
-            preprocessor = Preprocessor.from_pretrained(
-                model.model_dir,
-                sequence_length=kwargs.pop('sequence_length', 128))
-        super().__init__(model=model, preprocessor=preprocessor, **kwargs)
+            self.preprocessor = Preprocessor.from_pretrained(
+                self.model.model_dir,
+                sequence_length=sequence_length,
+                **kwargs)
 
     def forward(self, inputs: Dict[str, Any],
                 **forward_params) -> Dict[str, Any]:

@@ -10,8 +10,7 @@ from PIL import Image
 from torchvision import transforms
 
 from modelscope.metainfo import Pipelines
-from modelscope.models.cv.realtime_object_detection import \
-    RealtimeVideoDetector
+from modelscope.models.cv.stream_yolo import RealtimeVideoDetector
 from modelscope.outputs import OutputKeys
 from modelscope.pipelines import pipeline
 from modelscope.pipelines.base import Input, Model, Pipeline, Tensor
@@ -30,7 +29,6 @@ class RealtimeVideoObjectDetectionPipeline(Pipeline):
 
     def __init__(self, model: str, **kwargs):
         super().__init__(model=model, **kwargs)
-        self.model = RealtimeVideoDetector(model)
 
     def preprocess(self, input: Input) -> Dict[Tensor, Union[str, np.ndarray]]:
         return input

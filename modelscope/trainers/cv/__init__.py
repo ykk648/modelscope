@@ -10,6 +10,11 @@ if TYPE_CHECKING:
     from .movie_scene_segmentation_trainer import MovieSceneSegmentationTrainer
     from .image_inpainting_trainer import ImageInpaintingTrainer
     from .referring_video_object_segmentation_trainer import ReferringVideoObjectSegmentationTrainer
+    from .image_defrcn_fewshot_detection_trainer import ImageDefrcnFewshotTrainer
+    from .cartoon_translation_trainer import CartoonTranslationTrainer
+    from .ocr_recognition_trainer import OCRRecognitionTrainer
+    from .nerf_recon_acc_trainer import NeRFReconAccTrainer
+    from .vision_efficient_tuning_trainer import VisionEfficientTuningTrainer
 
 else:
     _import_structure = {
@@ -20,7 +25,13 @@ else:
         'movie_scene_segmentation_trainer': ['MovieSceneSegmentationTrainer'],
         'image_inpainting_trainer': ['ImageInpaintingTrainer'],
         'referring_video_object_segmentation_trainer':
-        ['ReferringVideoObjectSegmentationTrainer']
+        ['ReferringVideoObjectSegmentationTrainer'],
+        'image_defrcn_fewshot_detection_trainer':
+        ['ImageDefrcnFewshotTrainer'],
+        'cartoon_translation_trainer': ['CartoonTranslationTrainer'],
+        'ocr_recognition_trainer': ['OCRRecognitionTrainer'],
+        'nerf_recon_acc_trainer': ['NeRFReconAccTrainer'],
+        'vision_efficient_tuning_trainer': ['VisionEfficientTuningTrainer'],
     }
 
     import sys

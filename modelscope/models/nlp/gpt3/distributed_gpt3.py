@@ -14,22 +14,26 @@
 # limitations under the License.
 
 import math
+import os
+from collections import OrderedDict
+from typing import Callable, Dict, List, Optional, Union
 
 import torch
-from megatron import mpu
-from megatron.global_vars import get_global_memory_buffer, set_global_variables
-from megatron.model import (AttnMaskType, Float16Module, LayerNorm,
-                            bias_gelu_impl)
-from megatron.model.fused_softmax import FusedScaleMaskSoftmax
+from megatron_util import get_args, mpu
+from megatron_util.global_vars import get_global_memory_buffer
+from megatron_util.model import (AttnMaskType, Float16Module, LayerNorm,
+                                 bias_gelu_impl)
+from megatron_util.model.fused_softmax import FusedScaleMaskSoftmax
 from torch import nn
 from torch.nn import functional as F
 from transformers.modeling_utils import PreTrainedModel
 
 from modelscope.models import TorchModel
 from modelscope.models.nlp.gpt3 import GPT3Config
-from modelscope.utils.nlp.distributed import initialize_distributed
+from modelscope.outputs import TextGenerationModelOutput, TokenGeneratorOutput
+from modelscope.utils.megatron_utils import init_megatron_util
 from modelscope.utils.nlp.load_checkpoint import pre_load
-from modelscope.utils.torch_utils import set_random_seed_mpu
+from modelscope.utils.streaming_output import StreamingOutputMixin
 
 
 class GPT3ParallelMLP(nn.Module):
@@ -44,8 +48,7 @@ class GPT3ParallelMLP(nn.Module):
         super().__init__()
 
         # Project to 4h.
-        self.dense_h_to_4h = mpu.ColumnParallelLinearV3(
-            config,
+        self.dense_h_to_4h = mpu.ColumnParallelLinear(
             config.hidden_size,
             config.ffn_hidden_size,
             gather_output=False,
@@ -56,8 +59,7 @@ class GPT3ParallelMLP(nn.Module):
         self.activation_func = F.gelu
 
         # Project back to h.
-        self.dense_4h_to_h = mpu.RowParallelLinearV3(
-            config,
+        self.dense_4h_to_h = mpu.RowParallelLinear(
             config.ffn_hidden_size,
             config.hidden_size,
             input_is_parallel=True,
@@ -188,7 +190,7 @@ class GPT3CoreAttention(nn.Module):
         projection_size = config.kv_channels * config.num_attention_heads
 
         # Per attention head and per partition values.
-        world_size = mpu.get_model_parallel_world_size()
+        world_size = mpu.get_tensor_model_parallel_world_size()
         self.hidden_size_per_partition = mpu.divide(projection_size,
                                                     world_size)
         self.hidden_size_per_attention_head = mpu.divide(
@@ -314,15 +316,14 @@ class GPT3ParallelAttention(nn.Module):
         projection_size = config.kv_channels * config.num_attention_heads
 
         # Per attention head and per partition values.
-        world_size = mpu.get_model_parallel_world_size()
+        world_size = mpu.get_tensor_model_parallel_world_size()
         self.hidden_size_per_attention_head = mpu.divide(
             projection_size, config.num_attention_heads)
         self.num_attention_heads_per_partition = mpu.divide(
             config.num_attention_heads, world_size)
 
         # Strided linear layer.
-        self.query_key_value = mpu.ColumnParallelLinearV3(
-            config,
+        self.query_key_value = mpu.ColumnParallelLinear(
             config.hidden_size,
             3 * projection_size,
             gather_output=False,
@@ -331,8 +332,7 @@ class GPT3ParallelAttention(nn.Module):
         self.core_attention = GPT3CoreAttention(config, self.layer_number)
 
         # Output.
-        self.dense = mpu.RowParallelLinearV3(
-            config,
+        self.dense = mpu.RowParallelLinear(
             projection_size,
             config.hidden_size,
             input_is_parallel=True,
@@ -435,7 +435,7 @@ class nullcontext:
 
 def bias_dropout_add(x, bias, residual, prob, training):
     # type: (Tensor, Tensor, Tensor, float, bool) -> Tensor
-    out = torch.nn.functional.dropout(x + bias, p=prob, training=training)
+    out = F.dropout(x + bias, p=prob, training=training)
     out = residual + out
     return out
 
@@ -747,10 +747,8 @@ class GPT3Model(PreTrainedModel):
 
     config_class = GPT3Config
 
-    def __init__(self, config, parallel_output=False):
+    def __init__(self, config):
         super().__init__(config)
-
-        self.parallel_output = parallel_output
 
         self.language_model = GPT3TransformerLanguageModel(
             config, init_method_normal(config.init_method_std),
@@ -764,9 +762,7 @@ class GPT3Model(PreTrainedModel):
     def build_attention_mask_and_position_ids(tokens):
         seq_length = tokens.size(1)
         attention_mask = torch.tril(
-            torch.ones((1, 1, seq_length, seq_length),
-                       dtype=torch.long,
-                       device=tokens.device))
+            torch.ones((1, 1, seq_length, seq_length), device=tokens.device))
         attention_mask = (attention_mask < 0.5)
 
         position_ids = torch.arange(
@@ -780,6 +776,7 @@ class GPT3Model(PreTrainedModel):
                 attention_mask=None,
                 position_ids=None,
                 inference_params=None,
+                labels=None,
                 **kwargs):
         if attention_mask is None and position_ids is None:
             attention_mask, position_ids = \
@@ -794,12 +791,22 @@ class GPT3Model(PreTrainedModel):
         logits_parallel = mpu.LinearWithGradAccumulationAndAsyncCommunication.apply(
             lm_output, self.word_embeddings_weight(), None, False, True,
             self.config.sequence_parallel)
-        # Gather if needed.
 
-        output = logits_parallel
-        if not self.parallel_output:
-            output = mpu.gather_from_model_parallel_region(logits_parallel)
-        return output.transpose(0, 1).contiguous()
+        losses = None
+        if labels is not None:
+            # [b s] => [s b]
+            labels = labels.transpose(0, 1).contiguous()
+            losses = mpu.vocab_parallel_cross_entropy(
+                logits_parallel.clone().float(), labels)
+            # [s b] => [b s]
+            losses = losses.transpose(0, 1).contiguous()
+
+        # Gather if needed.
+        logits = mpu.gather_from_tensor_model_parallel_region(logits_parallel)
+        # [s b h] => [b s h]
+        logits = logits.transpose(0, 1).contiguous()
+
+        return logits, losses
 
 
 def modify_logits_for_top_k_filtering(logits, top_k):
@@ -842,8 +849,6 @@ def sample(logits, top_k=0, top_p=0.0, temperature=1.0, vocab_size=None):
 
     # Check logits for consistency.
     assert logits.ndim == 2, 'expected the logits to be of [b, v] shape.'
-    assert logits.type() == 'torch.cuda.FloatTensor', \
-        'input logits should be floats.'
 
     # Greedy is just simple argmax.
     if top_k == 1:
@@ -911,21 +916,47 @@ class InferenceParams:
                 new_inference_key_memory, new_inference_value_memory)
 
 
-class DistributedGPT3(TorchModel):
+def split_into_partitions(tensor, num_partitions, partition_dim, stride):
+    per_partition_size = mpu.utils.divide(
+        tensor.size(partition_dim), num_partitions)
+    per_partition_per_stride_size = mpu.utils.divide(per_partition_size,
+                                                     stride)
+    partitions_list = torch.split(
+        tensor, per_partition_per_stride_size, dim=partition_dim)
+    partitions = []
+    for i in range(num_partitions):
+        partition = torch.cat(
+            partitions_list[i::num_partitions], dim=partition_dim)
+        partitions.append(partition)
+    return partitions
+
+
+def split_state_dict(state_dict: Dict[str, torch.Tensor], model: GPT3Model,
+                     partitions: int) -> Dict[str, torch.Tensor]:
+    if partitions == 1:
+        return state_dict
+    rank: int = mpu.get_tensor_model_parallel_rank()
+    for name, parameters in model.named_parameters():
+        if parameters.shape == state_dict[name].shape:
+            continue
+        dim = max(parameters.partition_dim, 0)
+        stride = parameters.partition_stride
+        state_dict[name] = split_into_partitions(state_dict[name], partitions,
+                                                 dim, stride)[rank]
+    return state_dict
+
+
+class DistributedGPT3(TorchModel, StreamingOutputMixin):
 
     def __init__(self,
                  model_dir,
                  rank,
                  path_load_tag='model',
                  *args,
+                 megatron_cfg=None,
                  **kwargs):
         super().__init__(model_dir, *args, **kwargs)
-        initialize_distributed(rank, mpu, kwargs['world_size'],
-                               kwargs['model_parallel_size'],
-                               kwargs['master_ip'], kwargs['master_port'])
-        seed = 0 if 'seed' not in kwargs else kwargs['seed']
-        set_random_seed_mpu(seed)
-        set_global_variables()
+        init_megatron_util(megatron_cfg, model_dir, rank=rank)
 
         self.config = GPT3Config.from_pretrained(model_dir)
         # Build model.
@@ -942,41 +973,96 @@ class DistributedGPT3(TorchModel):
             model = Float16Module(model, self.config)
 
         self.dist_model = model
-        load_model = pre_load(mpu, model_dir, tag=path_load_tag)
-        self.dist_model.load_state_dict(load_model)
+
+        tensor_ws = mpu.get_tensor_model_parallel_world_size()
+        ckpt_ws = get_args().get('checkpoint_tensor_model_parallel_size', None)
+        ckpt_ws = tensor_ws if ckpt_ws is None else ckpt_ws
+        ckpt_rank = mpu.get_tensor_model_parallel_rank() * ckpt_ws // tensor_ws
+        load_model = pre_load(ckpt_rank, model_dir, tag=path_load_tag)
+        load_model = split_state_dict(load_model, model, tensor_ws // ckpt_ws)
+
+        self.dist_model.load_state_dict(
+            load_model, strict=kwargs.get('strict', True))
 
         self.inference_params = None
 
-    def forward_step(self, tokens, attention_mask, position_ids):
-        logits = self.dist_model(
+    def train(self, mode: bool = True):
+        if mode:
+            self.inference_params = None
+        return super().train(mode)
+
+    def forward(self,
+                tokens,
+                attention_mask=None,
+                position_ids=None,
+                labels=None,
+                prompts_len=None,
+                inputs_len=None):
+
+        logits, losses = self.dist_model(
             tokens,
             attention_mask,
             position_ids,
-            inference_params=self.inference_params)
-        self.inference_params.sequence_len_offset += tokens.size(1)
-        return logits
+            inference_params=self.inference_params,
+            labels=labels)
 
-    def generate(self,
-                 tokens,
-                 temperature=1.0,
-                 use_eod_token_for_early_termination=True,
-                 stop_on_double_eol=False,
-                 stop_on_eol=False):
-        lengths = torch.tensor([tokens.size(1)], device=tokens.device)
-        pads = torch.ones(
-            1, self.config.tokens_to_generate,
-            device=tokens.device).long() * self.config.eod_id
-        tokens = torch.cat((tokens, pads), dim=-1)
+        loss = None
+        if labels is None:
+            self.inference_params.sequence_len_offset += tokens.size(1)
+        else:
+            loss_mask = torch.ones(
+                labels.size(), dtype=torch.float, device=tokens.device)
+            if inputs_len is None:
+                for i, l in enumerate(prompts_len):
+                    loss_mask[i, l:] = 0
+            else:
+                for i, l in enumerate(inputs_len):
+                    loss_mask[i, l - 1:] = 0
+                for i, l in enumerate(prompts_len):
+                    loss_mask[i, :l - 1] = 0
+
+            losses = losses.float()
+            loss_mask = loss_mask.view(-1).float()
+            mask_sum = loss_mask.sum()
+            if mask_sum == 0:
+                loss = torch.sum(losses.view(-1)).zero_()
+            else:
+                loss = torch.sum(losses.view(-1) * loss_mask) / mask_sum
+
+        return TextGenerationModelOutput(logits=logits, loss=loss)
+
+    def sample(self,
+               tokens,
+               prompts_len=None,
+               use_eod_token_for_early_termination=True,
+               stop_on_double_eol=False,
+               stop_on_eol=False,
+               **kwargs):
+        top_k = kwargs.pop('top_k', self.config.top_k)
+        top_p = kwargs.pop('top_p', self.config.top_p)
+        temperature = kwargs.pop('temperature', self.config.temperature)
+        max_length = kwargs.pop(
+            'max_length',
+            tokens.size(1) + self.config.tokens_to_generate)
 
         batch_size = tokens.size(0)
+        lengths = prompts_len
+        if lengths is None:
+            lengths = torch.tensor([tokens.size(1)], device=tokens.device)
+
         min_prompt_length = lengths.min().item()
-        max_sequence_length = tokens.size(1)
-        max_sequence_length = min(max_sequence_length,
+        max_sequence_length = min(max_length,
                                   self.config.max_position_embeddings)
 
         # If the context is too big, this happens
         if min_prompt_length >= max_sequence_length:
             raise ValueError('context length + tokens_to_generate too large')
+
+        pad_length = max_sequence_length - tokens.size(1)
+        if pad_length > 0:
+            pads = torch.zeros(
+                batch_size, pad_length, device=tokens.device).long()
+            tokens = torch.cat((tokens, pads), dim=-1)
 
         # Initialize inference parameters.
         self.inference_params = InferenceParams(batch_size,
@@ -994,64 +1080,270 @@ class DistributedGPT3(TorchModel):
         # Run infernece
         # =============
 
-        with torch.no_grad():
-            attention_mask, position_ids = \
-                GPT3Model.build_attention_mask_and_position_ids(tokens)
-            prev_context_length = 0
-            for context_length in range(min_prompt_length,
-                                        max_sequence_length):
+        attention_mask, position_ids = \
+            GPT3Model.build_attention_mask_and_position_ids(tokens)
+        prev_context_length = 0
+        for context_length in range(min_prompt_length, max_sequence_length):
 
-                # Pick the slice that we need to pass through the network.
-                tokens2use = tokens[:, prev_context_length:context_length]
-                positions2use = position_ids[:, prev_context_length:
-                                             context_length]
-                attention_mask2use = attention_mask[
-                    ..., prev_context_length:context_length, :context_length]
+            # Pick the slice that we need to pass through the network.
+            tokens2use = tokens[:, prev_context_length:context_length]
+            positions2use = position_ids[:, prev_context_length:context_length]
+            attention_mask2use = attention_mask[
+                ..., prev_context_length:context_length, :context_length]
 
-                # logits will be meanigful only in the last pipeline stage.
-                logits = self.forward_step(tokens2use, attention_mask2use,
-                                           positions2use)
+            # logits will be meanigful only in the last pipeline stage.
+            logits = self(tokens2use, attention_mask2use, positions2use).logits
 
-                # Sample.
-                last_token_logits = logits[:, -1, :]
-                new_sample = sample(
-                    last_token_logits,
-                    top_k=self.config.top_k,
-                    top_p=self.config.top_p,
-                    temperature=temperature,
-                    vocab_size=self.config.vocab_size)
+            # Sample.
+            last_token_logits = logits[:, -1, :]
+            new_sample = sample(
+                last_token_logits,
+                top_k=top_k,
+                top_p=top_p,
+                temperature=temperature,
+                vocab_size=self.config.vocab_size)
 
-                # If a prompt length is smaller or equal th current context
-                # length, it means we have started generating tokens
-                started = lengths <= context_length
-                # Update the tokens.
-                tokens[started, context_length] = new_sample[started]
+            # If a prompt length is smaller or equal th current context
+            # length, it means we have started generating tokens
+            started = lengths <= context_length
+            # Update the tokens.
+            tokens[started, context_length] = new_sample[started]
 
-                # Update the context length for the next token generation.
-                prev_context_length = context_length
+            # streaming output
+            yield TokenGeneratorOutput(sequences=tokens[:, :(context_length
+                                                             + 1)])
 
-                # instead tokenization should be in the inference loop so stop sequences can be used
-                if stop_on_double_eol:
-                    hit_double_eol = (new_sample
-                                      == 628).byte() & started.byte()
-                    hit_two_eols = (new_sample == 198).byte() & (
-                        tokens[:, context_length - 1]
-                        == 198).byte() & started.byte()
-                    done_token = hit_double_eol | hit_two_eols
-                elif stop_on_eol:
-                    hit_double_eol = (new_sample
-                                      == 628).byte() & started.byte()
-                    hit_eol = (new_sample == 198).byte() & started.byte()
-                    done_token = hit_double_eol | hit_eol
+            # Update the context length for the next token generation.
+            prev_context_length = context_length
+
+            # instead tokenization should be in the inference loop so stop sequences can be used
+            if stop_on_double_eol:
+                hit_double_eol = (new_sample == 628).byte() & started.byte()
+                hit_two_eols = (new_sample == 198).byte() & (
+                    tokens[:,
+                           context_length - 1] == 198).byte() & started.byte()
+                done_token = hit_double_eol | hit_two_eols
+            elif stop_on_eol:
+                hit_double_eol = (new_sample == 628).byte() & started.byte()
+                hit_eol = (new_sample == 198).byte() & started.byte()
+                done_token = hit_double_eol | hit_eol
+            else:
+                done_token = (new_sample == termination_id).byte() & \
+                    started.byte()
+
+            is_generation_done = is_generation_done | done_token
+            done = torch.all(is_generation_done)
+
+            if use_eod_token_for_early_termination and done:
+                break
+
+    def beam_search(self, tokens, beam_size=5, num_return_gen=1, **kwargs):
+        batch_size = tokens.size(0)
+        assert (batch_size == 1)
+        prompt_length = kwargs.pop(
+            'prompt_length',
+            torch.tensor([tokens.size(1)], device=tokens.device)).item()
+        stop_token = self.config.eod_id
+        pads = torch.ones(
+            1, self.config.tokens_to_generate,
+            device=tokens.device).long() * stop_token
+        tokens = torch.cat((tokens, pads), dim=-1)
+        final_sequence_length = tokens.size(1)
+        final_sequence_length = min(final_sequence_length,
+                                    self.config.max_position_embeddings)
+
+        # If the context is too big, this happens
+        if prompt_length >= final_sequence_length:
+            raise ValueError('context length + tokens_to_generate too large')
+
+        # Initialize inference parameters.
+        self.inference_params = InferenceParams(beam_size,
+                                                final_sequence_length)
+
+        beam_hyp = BeamHypotheses(beam_size)
+        done = False
+        scores = torch.zeros(
+            beam_size, dtype=torch.float32,
+            device=torch.cuda.current_device()).unsqueeze(1)
+
+        # =============
+        # Run infernece
+        # =============
+        tokens = tokens.repeat(beam_size, 1)
+        attention_mask, position_ids = \
+            GPT3Model.build_attention_mask_and_position_ids(tokens)
+        prev_context_length = 0
+        for context_length in range(prompt_length, final_sequence_length):
+
+            # Pick the slice that we need to pass through the network.
+            tokens2use = tokens[:, prev_context_length:context_length]
+            positions2use = position_ids[:, prev_context_length:context_length]
+            attention_mask2use = attention_mask[
+                ..., prev_context_length:context_length, :context_length]
+
+            # logits will be meanigful only in the last pipeline stage.
+            logits = self(tokens2use, attention_mask2use, positions2use).logits
+
+            vocab_size = logits.size(2)
+            log_probs = F.log_softmax(logits, dim=2)
+            new_scores = log_probs[:, -1, :] + scores
+
+            if context_length == prompt_length:  # if this is the first one
+                sorted_scores, indices = torch.sort(
+                    new_scores[0, :], descending=True)
+            else:
+                sorted_scores, indices = torch.sort(
+                    new_scores.view(-1), descending=True)
+
+            best_beam_ids = torch.div(indices[:2 * beam_size],
+                                      vocab_size).trunc().long()
+            best_words = indices[:2 * beam_size] % vocab_size
+            best_scores = sorted_scores[:2 * beam_size]
+
+            next_beams = []
+            for beam_token_rank, (token_id, beam_score, beam_id) in enumerate(
+                    zip(best_words, best_scores, best_beam_ids)):
+                if token_id.item() == stop_token:
+                    # if beam_token does not belong to top num_beams tokens, it should not be added
+                    is_beam_token_worse_than_top_num_beams = beam_token_rank >= beam_size
+                    if is_beam_token_worse_than_top_num_beams:
+                        continue
+                    beam_hyp.add(tokens[beam_id].clone(), beam_score,
+                                 context_length + 1 - prompt_length)
                 else:
-                    done_token = (new_sample == termination_id).byte() & \
-                        started.byte()
+                    # add next predicted token since it is not eos_token
+                    next_beams.append((token_id, beam_score, beam_id))
 
-                is_generation_done = is_generation_done | done_token
-                done = torch.all(is_generation_done)
-
-                if use_eod_token_for_early_termination and done:
+                if len(next_beams) == beam_size:
                     break
 
-        tokens = tokens[:, :(context_length + 1)]
-        return tokens
+            if beam_hyp.is_done(best_scores.max().item(),
+                                context_length + 1 - prompt_length):
+                done = True
+                break
+
+            best_batches = tokens.new([item[2] for item in next_beams])
+            tokens = tokens[best_batches, :]
+            tokens[:, context_length] = tokens.new(
+                [item[0] for item in next_beams])
+            scores = scores.new([item[1] for item in next_beams]).unsqueeze(1)
+
+            # set inference key values to make it consistent with best beam index
+            self.inference_params.swap_key_value_dict(best_batches)
+
+            # Update the context length for the next token generation.
+            prev_context_length = context_length
+
+        # if cannot find stop token, add open beams to hyps
+        if not done:
+            for beam_id in range(beam_size):
+                beam_hyp.add(tokens[beam_id].clone(), scores[beam_id],
+                             context_length + 1 - prompt_length)
+
+        # rank based on scores
+        sorted_hyps = sorted(beam_hyp.beams, key=lambda x: x[0], reverse=True)
+        num_return_gen = min(num_return_gen, len(sorted_hyps))
+        scores = [sorted_hyps[i][0] for i in range(num_return_gen)]
+        tokens = [sorted_hyps[i][1] for i in range(num_return_gen)]
+        scores = torch.stack(scores, dim=0)
+        tokens = torch.stack(tokens, dim=0)
+
+        return TokenGeneratorOutput(sequences=tokens, scores=scores)
+
+    @torch.no_grad()
+    def generate(self, tokens, do_sample=True, *args, **kwargs):
+        if do_sample:
+            last_output = None
+            for output in self.sample(tokens, *args, **kwargs):
+                last_output = output
+            return last_output
+        else:
+            return self.beam_search(tokens, *args, **kwargs)
+
+    @torch.no_grad()
+    def stream_generate(self, tokens, *args, **kwargs):
+        return self.sample(tokens, *args, **kwargs)
+
+    def state_dict(self, destination=None, prefix='', keep_vars=False):
+        return self.dist_model.state_dict(destination, prefix, keep_vars)
+
+    def load_state_dict(self,
+                        state_dict: 'OrderedDict[str, torch.Tensor]',
+                        strict: bool = True):
+        return self.dist_model.load_state_dict(state_dict, strict)
+
+    def save_pretrained(self,
+                        target_folder: Union[str, os.PathLike],
+                        save_checkpoint_names: Union[str, List[str]] = None,
+                        save_function: Callable = None,
+                        config: Optional[dict] = None,
+                        **kwargs):
+        # DistributedPipeline type is different from task name
+        config['pipeline']['type'] = 'gpt3-generation'
+
+        config['model'].pop('rank', None)
+        config['model'].pop('megatron_cfg', None)
+        config['megatron'].pop('rank', None)
+        config['megatron'].pop('checkpoint_tensor_model_parallel_size', None)
+        tp_size = get_args().tensor_model_parallel_size
+        pp_size = get_args().pipeline_model_parallel_size
+        config['megatron']['world_size'] = tp_size * pp_size
+
+        return super().save_pretrained(target_folder, save_checkpoint_names,
+                                       save_function, config, **kwargs)
+
+
+class BeamHypotheses:
+
+    def __init__(self,
+                 num_beams: int,
+                 length_penalty: float = 1.0,
+                 early_stopping: bool = False):
+        """
+        Initialize n-best list of hypotheses.
+        """
+        self.length_penalty = length_penalty
+        self.early_stopping = early_stopping
+        self.num_beams = num_beams
+        self.beams = []
+        self.worst_score = 1e9
+
+    def __len__(self):
+        """
+        Number of hypotheses in the list.
+        """
+        return len(self.beams)
+
+    def add(self,
+            hyp: torch.LongTensor,
+            sum_logprobs: float,
+            beam_indices: Optional[torch.LongTensor] = None):
+        """
+        Add a new hypothesis to the list.
+        """
+        score = sum_logprobs / (hyp.shape[-1]**self.length_penalty)
+        if len(self) < self.num_beams or score > self.worst_score:
+            self.beams.append((score, hyp, beam_indices))
+            if len(self) > self.num_beams:
+                sorted_next_scores = sorted([
+                    (s, idx) for idx, (s, _, _) in enumerate(self.beams)
+                ])
+                del self.beams[sorted_next_scores[0][1]]
+                self.worst_score = sorted_next_scores[1][0]
+            else:
+                self.worst_score = min(score, self.worst_score)
+
+    def is_done(self, best_sum_logprobs: float, cur_len: int) -> bool:
+        """
+        If there are enough hypotheses and that none of the hypotheses being generated can become better than the worst
+        one in the heap, then we are done with this sentence.
+        """
+
+        if len(self) < self.num_beams:
+            return False
+        elif self.early_stopping:
+            return True
+        else:
+            cur_score = best_sum_logprobs / cur_len**self.length_penalty
+            ret = self.worst_score >= cur_score
+            return ret

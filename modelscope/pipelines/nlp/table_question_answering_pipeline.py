@@ -33,6 +33,9 @@ class TableQuestionAnsweringPipeline(Pipeline):
                  model: Union[TableQuestionAnswering, str],
                  preprocessor: TableQuestionAnsweringPreprocessor = None,
                  db: Database = None,
+                 config_file: str = None,
+                 device: str = 'gpu',
+                 auto_collate=True,
                  **kwargs):
         """use `model` and `preprocessor` to create a table question answering prediction pipeline
 
@@ -40,22 +43,36 @@ class TableQuestionAnsweringPipeline(Pipeline):
             model (TableQuestionAnswering): a model instance
             preprocessor (TableQuestionAnsweringPreprocessor): a preprocessor instance
             db (Database): a database to store tables in the database
+            kwargs (dict, `optional`):
+                Extra kwargs passed into the preprocessor's constructor.
         """
-        model = model if isinstance(
-            model, TableQuestionAnswering) else Model.from_pretrained(model)
+        super().__init__(
+            model=model,
+            preprocessor=preprocessor,
+            config_file=config_file,
+            device=device,
+            auto_collate=auto_collate,
+            compile=kwargs.pop('compile', False),
+            compile_options=kwargs.pop('compile_options', {}))
+
+        assert isinstance(self.model, Model), \
+            f'please check whether model config exists in {ModelFile.CONFIGURATION}'
+
         if preprocessor is None:
-            preprocessor = TableQuestionAnsweringPreprocessor(model.model_dir)
+            self.preprocessor = TableQuestionAnsweringPreprocessor(
+                self.model.model_dir, **kwargs)
 
         # initilize tokenizer
         self.tokenizer = BertTokenizer(
-            os.path.join(model.model_dir, ModelFile.VOCAB_FILE))
+            os.path.join(self.model.model_dir, ModelFile.VOCAB_FILE))
 
         # initialize database
         if db is None:
             self.db = Database(
                 tokenizer=self.tokenizer,
-                table_file_path=os.path.join(model.model_dir, 'table.json'),
-                syn_dict_file_path=os.path.join(model.model_dir,
+                table_file_path=os.path.join(self.model.model_dir,
+                                             'table.json'),
+                syn_dict_file_path=os.path.join(self.model.model_dir,
                                                 'synonym.txt'))
         else:
             self.db = db
@@ -71,7 +88,12 @@ class TableQuestionAnsweringPipeline(Pipeline):
         self.schema_link_dict = constant.schema_link_dict
         self.limit_dict = constant.limit_dict
 
-        super().__init__(model=model, preprocessor=preprocessor, **kwargs)
+    def prepare_model(self):
+        """ Place model on certain device for pytorch models before first inference
+                """
+        self._model_prepare_lock.acquire(timeout=600)
+        self.model.to(self.device)
+        self._model_prepare_lock.release()
 
     def post_process_multi_turn(self, history_sql, result, table):
         action = self.action_ops[result['action']]
@@ -231,19 +253,6 @@ class TableQuestionAnsweringPipeline(Pipeline):
         header_ids = table['header_id'] + ['null']
         sql = result['sql']
 
-        str_sel_list, sql_sel_list = [], []
-        for idx, sel in enumerate(sql['sel']):
-            header_name = header_names[sel]
-            header_id = '`%s`.`%s`' % (table['table_id'], header_ids[sel])
-            if sql['agg'][idx] == 0:
-                str_sel_list.append(header_name)
-                sql_sel_list.append(header_id)
-            else:
-                str_sel_list.append(self.agg_ops[sql['agg'][idx]] + '('
-                                    + header_name + ')')
-                sql_sel_list.append(self.agg_ops[sql['agg'][idx]] + '('
-                                    + header_id + ')')
-
         str_cond_list, sql_cond_list = [], []
         where_conds, orderby_conds = [], []
         for cond in sql['conds']:
@@ -285,8 +294,38 @@ class TableQuestionAnsweringPipeline(Pipeline):
             if is_in:
                 str_orderby += ' LIMIT %d' % (limit_num)
                 sql_orderby += ' LIMIT %d' % (limit_num)
+            # post process null column
+            for idx, sel in enumerate(sql['sel']):
+                if sel == len(header_ids) - 1:
+                    primary_sel = 0
+                    for index, attrib in enumerate(table['header_attribute']):
+                        if attrib == 'PRIMARY':
+                            primary_sel = index
+                            break
+                    if primary_sel not in sql['sel']:
+                        sql['sel'][idx] = primary_sel
+                    else:
+                        del sql['sel'][idx]
         else:
             str_orderby = ''
+
+        str_sel_list, sql_sel_list = [], []
+        for idx, sel in enumerate(sql['sel']):
+            header_name = header_names[sel]
+            header_id = '`%s`.`%s`' % (table['table_id'], header_ids[sel])
+            if sql['agg'][idx] == 0:
+                str_sel_list.append(header_name)
+                sql_sel_list.append(header_id)
+            elif sql['agg'][idx] == 4:
+                str_sel_list.append(self.agg_ops[sql['agg'][idx]]
+                                    + '(DISTINCT ' + header_name + ')')
+                sql_sel_list.append(self.agg_ops[sql['agg'][idx]]
+                                    + '(DISTINCT ' + header_id + ')')
+            else:
+                str_sel_list.append(self.agg_ops[sql['agg'][idx]] + '('
+                                    + header_name + ')')
+                sql_sel_list.append(self.agg_ops[sql['agg'][idx]] + '('
+                                    + header_id + ')')
 
         if len(str_cond_list) != 0 and len(str_orderby) != 0:
             final_str = 'SELECT %s FROM %s WHERE %s ORDER BY %s' % (
@@ -364,7 +403,7 @@ class TableQuestionAnsweringPipeline(Pipeline):
             OutputKeys.SQL_STRING: sql.string,
             OutputKeys.SQL_QUERY: sql.query,
             OutputKeys.HISTORY: result['sql'],
-            OutputKeys.QUERT_RESULT: tabledata,
+            OutputKeys.QUERY_RESULT: tabledata,
         }
 
         return {OutputKeys.OUTPUT: output}

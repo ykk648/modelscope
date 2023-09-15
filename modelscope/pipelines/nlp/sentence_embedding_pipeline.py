@@ -3,6 +3,7 @@
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
+import torch
 
 from modelscope.metainfo import Pipelines
 from modelscope.models import Model
@@ -10,7 +11,7 @@ from modelscope.outputs import OutputKeys
 from modelscope.pipelines.base import Pipeline
 from modelscope.pipelines.builder import PIPELINES
 from modelscope.preprocessors import Preprocessor
-from modelscope.utils.constant import Tasks
+from modelscope.utils.constant import ModelFile, Tasks
 
 __all__ = ['SentenceEmbeddingPipeline']
 
@@ -22,7 +23,10 @@ class SentenceEmbeddingPipeline(Pipeline):
     def __init__(self,
                  model: Union[Model, str],
                  preprocessor: Optional[Preprocessor] = None,
-                 first_sequence='first_sequence',
+                 config_file: str = None,
+                 device: str = 'gpu',
+                 auto_collate=True,
+                 sequence_length=128,
                  **kwargs):
         """Use `model` and `preprocessor` to create a nlp text dual encoder then generates the text representation.
         Args:
@@ -30,16 +34,26 @@ class SentenceEmbeddingPipeline(Pipeline):
             or a model id from the model hub, or a torch model instance.
             preprocessor (Preprocessor): An optional preprocessor instance, please make sure the preprocessor fits for
             the model if supplied.
-            sequence_length: Max sequence length in the user's custom scenario. 128 will be used as a default value.
+            kwargs (dict, `optional`):
+                Extra kwargs passed into the preprocessor's constructor.
         """
-        model = Model.from_pretrained(model) if isinstance(model,
-                                                           str) else model
+        super().__init__(
+            model=model,
+            preprocessor=preprocessor,
+            config_file=config_file,
+            device=device,
+            auto_collate=auto_collate,
+            compile=kwargs.pop('compile', False),
+            compile_options=kwargs.pop('compile_options', {}))
+
+        assert isinstance(self.model, Model), \
+            f'please check whether model config exists in {ModelFile.CONFIGURATION}'
+
         if preprocessor is None:
-            preprocessor = Preprocessor.from_pretrained(
-                model.model_dir if isinstance(model, Model) else model,
-                first_sequence=first_sequence,
-                sequence_length=kwargs.pop('sequence_length', 128))
-        super().__init__(model=model, preprocessor=preprocessor, **kwargs)
+            self.preprocessor = Preprocessor.from_pretrained(
+                self.model.model_dir,
+                sequence_length=sequence_length,
+                **kwargs)
 
     def forward(self, inputs: Dict[str, Any],
                 **forward_params) -> Dict[str, Any]:
@@ -54,11 +68,17 @@ class SentenceEmbeddingPipeline(Pipeline):
         Returns:
             Dict[str, Any]: the predicted text representation
         """
-        embs = inputs['last_hidden_state'][:, 0].cpu().numpy()
-        num_sent = embs.shape[0]
-        if num_sent >= 2:
-            scores = np.dot(embs[0:1, ], np.transpose(embs[1:, ],
-                                                      (1, 0))).tolist()[0]
+        embeddings = inputs['query_embeddings']
+        doc_embeddings = inputs['doc_embeddings']
+        if doc_embeddings is not None:
+            embeddings = torch.cat((embeddings, doc_embeddings), dim=0)
+        embeddings = embeddings.detach().cpu().numpy()
+        if doc_embeddings is not None:
+            scores = np.dot(embeddings[0:1, ],
+                            np.transpose(embeddings[1:, ], (1, 0))).tolist()[0]
         else:
             scores = []
-        return {OutputKeys.TEXT_EMBEDDING: embs, OutputKeys.SCORES: scores}
+        return {
+            OutputKeys.TEXT_EMBEDDING: embeddings,
+            OutputKeys.SCORES: scores
+        }

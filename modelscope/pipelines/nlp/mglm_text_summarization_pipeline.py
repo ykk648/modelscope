@@ -1,5 +1,6 @@
 # Copyright (c) 2022 Zhipu.AI
 
+import os
 from typing import Any, Dict, Optional, Union
 
 from modelscope.metainfo import Pipelines
@@ -21,7 +22,7 @@ class MGLMTextSummarizationPipeline(Pipeline):
 
     def __init__(self,
                  model: Union[MGLMForTextSummarization, str],
-                 preprocessor: [Preprocessor] = None,
+                 preprocessor: Optional[Preprocessor] = None,
                  *args,
                  **kwargs):
         model = MGLMForTextSummarization(model) if isinstance(model,
@@ -30,6 +31,8 @@ class MGLMTextSummarizationPipeline(Pipeline):
         self.model.eval()
         if preprocessor is None:
             preprocessor = MGLMSummarizationPreprocessor()
+        from modelscope.utils.torch_utils import _find_free_port
+        os.environ['MASTER_PORT'] = str(_find_free_port())
         super().__init__(model=model, preprocessor=preprocessor, **kwargs)
 
     # define the forward pass

@@ -16,9 +16,6 @@
 """PyTorch BERT model. """
 
 import math
-import os
-from dataclasses import dataclass
-from typing import Optional, Tuple
 
 import torch
 import torch.utils.checkpoint
@@ -33,14 +30,13 @@ from transformers.modeling_utils import (PreTrainedModel,
 from modelscope.metainfo import Models
 from modelscope.models import Model, TorchModel
 from modelscope.models.builder import MODELS
-from modelscope.outputs import (BaseModelOutputWithPastAndCrossAttentions,
-                                BaseModelOutputWithPoolingAndCrossAttentions)
+from modelscope.outputs import AttentionBackboneModelOutput
 from modelscope.utils.constant import Tasks
-from modelscope.utils.hub import parse_label_mapping
 from modelscope.utils.logger import get_logger
+from modelscope.utils.nlp.utils import parse_labels_in_order
 from .configuration import BertConfig
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 _CONFIG_FOR_DOC = 'BertConfig'
 
@@ -562,7 +558,7 @@ class BertEncoder(nn.Module):
                 all_self_attentions,
                 all_cross_attentions,
             ] if v is not None)
-        return BaseModelOutputWithPastAndCrossAttentions(
+        return AttentionBackboneModelOutput(
             last_hidden_state=hidden_states,
             past_key_values=next_decoder_cache,
             hidden_states=all_hidden_states,
@@ -639,30 +635,15 @@ class BertPreTrainedModel(TorchModel, PreTrainedModel):
             The loaded model, which is initialized by transformers.PreTrainedModel.from_pretrained
         """
 
-        model_dir = kwargs.get('model_dir', None)
+        model_dir = kwargs.pop('model_dir', None)
+        cfg = kwargs.pop('cfg', None)
+        model_args = parse_labels_in_order(model_dir, cfg, **kwargs)
         if model_dir is None:
-            config = BertConfig(**kwargs)
+            config = BertConfig(**model_args)
             model = cls(config)
         else:
-            model_kwargs = {}
-            label2id = kwargs.get('label2id', parse_label_mapping(model_dir))
-            id2label = kwargs.get(
-                'id2label', None if label2id is None else
-                {id: label
-                 for label, id in label2id.items()})
-            if id2label is not None and label2id is None:
-                label2id = {label: id for id, label in id2label.items()}
-
-            num_labels = kwargs.get(
-                'num_labels', None if label2id is None else len(label2id))
-            if num_labels is not None:
-                model_kwargs['num_labels'] = num_labels
-            if label2id is not None:
-                model_kwargs['label2id'] = label2id
-            if id2label is not None:
-                model_kwargs['id2label'] = id2label
             model = super(Model, cls).from_pretrained(
-                pretrained_model_name_or_path=model_dir, **model_kwargs)
+                pretrained_model_name_or_path=model_dir, **model_args)
         model.model_dir = model_dir
         return model
 
@@ -750,91 +731,91 @@ class BertModel(BertPreTrainedModel):
                 output_attentions=None,
                 output_hidden_states=None,
                 return_dict=None,
-                **kwargs):
+                **kwargs) -> AttentionBackboneModelOutput:
         r"""
         Args:
-        input_ids (`torch.LongTensor` of shape `((batch_size, sequence_length)`):
-            Indices of input sequence tokens in the vocabulary.
+            input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
+                Indices of input sequence tokens in the vocabulary.
 
-            Indices can be obtained using [`BertTokenizer`]. See
-            [`PreTrainedTokenizer.encode`] and [`PreTrainedTokenizer.__call__`]
-            for details.
+                Indices can be obtained using [`BertTokenizer`]. See
+                [`PreTrainedTokenizer.encode`] and [`PreTrainedTokenizer.__call__`]
+                for details.
 
-            [What are input IDs?](../glossary#input-ids)
-        attention_mask (`torch.FloatTensor` of shape `((batch_size, sequence_length)`, *optional*):
-            Mask to avoid performing attention on padding token indices. Mask
-            values selected in `[0, 1]`:
+                [What are input IDs?](../glossary#input-ids)
+            attention_mask (`torch.FloatTensor` of shape `(batch_size, sequence_length)`, *optional*):
+                Mask to avoid performing attention on padding token indices. Mask
+                values selected in `[0, 1]`:
 
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
+                - 1 for tokens that are **not masked**,
+                - 0 for tokens that are **masked**.
 
-            [What are attention masks?](../glossary#attention-mask)
-        token_type_ids (`torch.LongTensor` of shape `((batch_size, sequence_length)`, *optional*):
-            Segment token indices to indicate first and second portions of the
-            inputs. Indices are selected in `[0, 1]`:
+                [What are attention masks?](../glossary#attention-mask)
+            token_type_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+                Segment token indices to indicate first and second portions of the
+                inputs. Indices are selected in `[0, 1]`:
 
-            - 0 corresponds to a *sentence A* token,
-            - 1 corresponds to a *sentence B* token.
+                - 0 corresponds to a *sentence A* token,
+                - 1 corresponds to a *sentence B* token.
 
-            [What are token type IDs?](../glossary#token-type-ids)
-        position_ids (`torch.LongTensor` of shape `((batch_size, sequence_length)`, *optional*):
-            Indices of positions of each input sequence tokens in the position
-            embeddings. Selected in the range `[0,
-            config.max_position_embeddings - 1]`.
+                [What are token type IDs?](../glossary#token-type-ids)
+            position_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+                Indices of positions of each input sequence tokens in the position
+                embeddings. Selected in the range `[0,
+                config.max_position_embeddings - 1]`.
 
-            [What are position IDs?](../glossary#position-ids)
-        head_mask (`torch.FloatTensor` of shape `(num_heads,)` or `(num_layers,
-        num_heads)`, *optional*):
-            Mask to nullify selected heads of the self-attention modules. Mask
-            values selected in `[0, 1]`:
+                [What are position IDs?](../glossary#position-ids)
+            head_mask (`torch.FloatTensor` of shape `(num_heads,)` or `(num_layers,
+                num_heads)`, *optional*):
+                Mask to nullify selected heads of the self-attention modules. Mask
+                values selected in `[0, 1]`:
 
-            - 1 indicates the head is **not masked**,
-            - 0 indicates the head is **masked**.
+                - 1 indicates the head is **not masked**,
+                - 0 indicates the head is **masked**.
 
-        inputs_embeds (`torch.FloatTensor` of shape `((batch_size, sequence_length, hidden_size)`,
-        *optional*):
-            Optionally, instead of passing `input_ids` you can choose to
-            directly pass an embedded representation. This is useful if you want
-            more control over how to convert `input_ids` indices into associated
-            vectors than the model's internal embedding lookup matrix.
-        output_attentions (`bool`, *optional*):
-            Whether or not to return the attentions tensors of all attention
-            layers. See `attentions` under returned tensors for more detail.
-        output_hidden_states (`bool`, *optional*):
-            Whether or not to return the hidden states of all layers. See
-            `hidden_states` under returned tensors for more detail.
-        return_dict (`bool`, *optional*):
-            Whether or not to return a [`~file_utils.ModelOutput`] instead of a
-            plain tuple.
-        encoder_hidden_states  (`torch.FloatTensor` of shape `(batch_size,
-        sequence_length, hidden_size)`, *optional*):
-            Sequence of hidden-states at the output of the last layer of the
-            encoder. Used in the cross-attention if the model is configured as a
-            decoder.
-        encoder_attention_mask (`torch.FloatTensor` of shape `(batch_size,
-        sequence_length)`, *optional*):
-            Mask to avoid performing attention on the padding token indices of
-            the encoder input. This mask is used in the cross-attention if the
-            model is configured as a decoder. Mask values selected in `[0, 1]`:
+            inputs_embeds (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`,
+                *optional*):
+                Optionally, instead of passing `input_ids` you can choose to
+                directly pass an embedded representation. This is useful if you want
+                more control over how to convert `input_ids` indices into associated
+                vectors than the model's internal embedding lookup matrix.
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention
+                layers. See `attentions` under returned tensors for more detail.
+            output_hidden_states (`bool`, *optional*):
+                Whether or not to return the hidden states of all layers. See
+                `hidden_states` under returned tensors for more detail.
+            return_dict (`bool`, *optional*):
+                Whether or not to return a [`~file_utils.ModelOutput`] instead of a
+                plain tuple.
+            encoder_hidden_states  (`torch.FloatTensor` of shape `(batch_size,
+                sequence_length, hidden_size)`, *optional*):
+                Sequence of hidden-states at the output of the last layer of the
+                encoder. Used in the cross-attention if the model is configured as a
+                decoder.
+            encoder_attention_mask (`torch.FloatTensor` of shape `(batch_size,
+                sequence_length)`, *optional*):
+                Mask to avoid performing attention on the padding token indices of
+                the encoder input. This mask is used in the cross-attention if the
+                model is configured as a decoder. Mask values selected in `[0, 1]`:
 
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
-        past_key_values (`tuple(tuple(torch.FloatTensor))` of length
-        `config.n_layers` with each tuple having 4 tensors of shape
-        `(batch_size, num_heads, sequence_length - 1, embed_size_per_head)`):
-            Contains precomputed key and value hidden states of the attention
-            blocks. Can be used to speed up decoding.
+                - 1 for tokens that are **not masked**,
+                - 0 for tokens that are **masked**.
+            past_key_values (`tuple(tuple(torch.FloatTensor))` of length
+                `config.n_layers` with each tuple having 4 tensors of shape
+                `(batch_size, num_heads, sequence_length - 1, embed_size_per_head)`):
+                Contains precomputed key and value hidden states of the attention
+                blocks. Can be used to speed up decoding.
 
-            If `past_key_values` are used, the user can optionally input only
-            the last `decoder_input_ids` (those that don't have their past key
-            value states given to this model) of shape `(batch_size, 1)` instead
-            of all `decoder_input_ids` of shape `(batch_size, sequence_length)`.
-        use_cache (`bool`, *optional*):
-            If set to `True`, `past_key_values` key value states are returned
-            and can be used to speed up decoding (see `past_key_values`).
-        Others (**kwargs)
-            some additional parameters might passed in from upstream pipeline,
-            which not influence the results.
+                If `past_key_values` are used, the user can optionally input only
+                the last `decoder_input_ids` (those that don't have their past key
+                value states given to this model) of shape `(batch_size, 1)` instead
+                of all `decoder_input_ids` of shape `(batch_size, sequence_length)`.
+            use_cache (`bool`, *optional*):
+                If set to `True`, `past_key_values` key value states are returned
+                and can be used to speed up decoding (see `past_key_values`).
+            Others (**kwargs)
+                some additional parameters might passed in from upstream pipeline,
+                which not influence the results.
         """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -936,7 +917,7 @@ class BertModel(BertPreTrainedModel):
         if not return_dict:
             return (sequence_output, pooled_output) + encoder_outputs[1:]
 
-        return BaseModelOutputWithPoolingAndCrossAttentions(
+        return AttentionBackboneModelOutput(
             last_hidden_state=sequence_output,
             pooler_output=pooled_output,
             past_key_values=encoder_outputs.past_key_values,

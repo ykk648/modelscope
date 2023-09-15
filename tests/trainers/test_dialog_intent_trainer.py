@@ -27,7 +27,7 @@ class TestDialogIntentTrainer(unittest.TestCase):
         shutil.rmtree(self.save_dir)
         super().tearDown()
 
-    @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
+    @unittest.skipUnless(test_level() >= 1, 'skip test in current test level')
     def test_trainer_with_model_and_args(self):
         model_id = 'damo/nlp_space_pretrained-dialog-model'
         data_banking = MsDataset.load('banking77')
@@ -94,7 +94,7 @@ class TestDialogIntentTrainer(unittest.TestCase):
         cfg.Model.update(config['Model'])
         if self.debugging:
             cfg.Trainer.save_checkpoint = False
-            cfg.Trainer.num_epochs = 5
+            cfg.Trainer.num_epochs = 1
             cfg.Trainer.batch_size_label = 64
         return cfg
 

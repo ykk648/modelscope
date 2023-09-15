@@ -1,5 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 # Copyright (c) Alibaba, Inc. and its affiliates.
+from functools import wraps
+
 from modelscope.utils.constant import TrainerStages
 from modelscope.utils.import_utils import is_method_overridden
 from .priority import Priority
@@ -10,17 +12,25 @@ class Hook:
     The Hook base class of any modelscope trainer. You can build your own hook inherited from this class.
     """
 
-    stages = (TrainerStages.before_run, TrainerStages.before_train_epoch,
+    stages = (TrainerStages.after_init, TrainerStages.before_run,
+              TrainerStages.before_val, TrainerStages.before_train_epoch,
               TrainerStages.before_train_iter, TrainerStages.after_train_iter,
               TrainerStages.after_train_epoch, TrainerStages.before_val_epoch,
               TrainerStages.before_val_iter, TrainerStages.after_val_iter,
-              TrainerStages.after_val_epoch, TrainerStages.after_run)
+              TrainerStages.after_val_epoch, TrainerStages.after_run,
+              TrainerStages.after_val)
 
     PRIORITY = Priority.NORMAL
 
+    def after_init(self, trainer):
+        """
+        Will be called at the end of the trainer's `__init__` method
+        """
+        pass
+
     def before_run(self, trainer):
         """
-        Will be called before any loop begins.
+        Will be called before trainer loop begins.
         Args:
             trainer: The trainer instance.
 
@@ -31,7 +41,29 @@ class Hook:
 
     def after_run(self, trainer):
         """
-        Will be called after all loops end.
+        Will be called after trainer loop end.
+        Args:
+            trainer: The trainer instance.
+
+        Returns: None
+
+        """
+        pass
+
+    def before_val(self, trainer):
+        """
+        Will be called before eval loop begins.
+        Args:
+            trainer: The trainer instance.
+
+        Returns: None
+
+        """
+        pass
+
+    def after_val(self, trainer):
+        """
+        Will be called after eval loop end.
         Args:
             trainer: The trainer instance.
 
@@ -166,42 +198,48 @@ class Hook:
         """
         self.after_iter(trainer)
 
-    def every_n_epochs(self, trainer, n):
+    @staticmethod
+    def every_n_epochs(trainer, n):
         """
         Whether to reach every ``n`` epochs
         Returns: bool
         """
         return (trainer.epoch + 1) % n == 0 if n > 0 else False
 
-    def every_n_inner_iters(self, runner, n):
+    @staticmethod
+    def every_n_inner_iters(runner, n):
         """
         Whether to reach every ``n`` iterations at every epoch
         Returns: bool
         """
         return (runner.inner_iter + 1) % n == 0 if n > 0 else False
 
-    def every_n_iters(self, trainer, n):
+    @staticmethod
+    def every_n_iters(trainer, n):
         """
         Whether to reach every ``n`` iterations
         Returns: bool
         """
         return (trainer.iter + 1) % n == 0 if n > 0 else False
 
-    def end_of_epoch(self, trainer):
+    @staticmethod
+    def end_of_epoch(trainer):
         """
         Whether to reach the end of every epoch
         Returns: bool
         """
         return trainer.inner_iter + 1 == trainer.iters_per_epoch
 
-    def is_last_epoch(self, trainer):
+    @staticmethod
+    def is_last_epoch(trainer):
         """
         Whether to reach the last epoch
         Returns: bool
         """
         return trainer.epoch + 1 == trainer.max_epochs
 
-    def is_last_iter(self, trainer):
+    @staticmethod
+    def is_last_iter(trainer):
         """
         Whether to reach the last iteration in the entire training process
         Returns: bool

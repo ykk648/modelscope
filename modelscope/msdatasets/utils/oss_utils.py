@@ -1,13 +1,17 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
 
 from __future__ import print_function
+import multiprocessing
 import os
 
 import oss2
 from datasets.utils.file_utils import hash_url_to_filename
 
 from modelscope.hub.api import HubApi
-from modelscope.utils.constant import UploadMode
+from modelscope.msdatasets.download.download_config import DataDownloadConfig
+from modelscope.utils.config_ds import MS_CACHE_HOME
+from modelscope.utils.constant import (DEFAULT_DATA_ACCELERATION_ENDPOINT,
+                                       MetaDataFields, UploadMode)
 from modelscope.utils.logger import get_logger
 
 logger = get_logger()
@@ -29,31 +33,40 @@ class OssUtilities:
         self.namespace = namespace
         self.revision = revision
 
-        self.upload_resumable_tmp_store = '/tmp/modelscope/tmp_dataset'
-        self.upload_multipart_threshold = 50 * 1024 * 1024
-        self.upload_part_size = 1 * 1024 * 1024
-        self.upload_num_threads = 4
-        self.upload_max_retries = 3
+        self.resumable_store_root_path = os.path.join(MS_CACHE_HOME,
+                                                      'tmp/resumable_store')
+        self.num_threads = multiprocessing.cpu_count()
+        self.part_size = 1 * 1024 * 1024
+        self.multipart_threshold = 50 * 1024 * 1024
+        self.max_retries = 3
 
+        self.resumable_store_download = oss2.ResumableDownloadStore(
+            root=self.resumable_store_root_path)
+        self.resumable_store_upload = oss2.ResumableStore(
+            root=self.resumable_store_root_path)
         self.api = HubApi()
 
     def _do_init(self, oss_config):
         self.key = oss_config[ACCESS_ID]
         self.secret = oss_config[ACCESS_SECRET]
         self.token = oss_config[SECURITY_TOKEN]
-        self.endpoint = f"https://{oss_config['Region']}.aliyuncs.com"
+        if os.getenv('ENABLE_DATASET_ACCELERATION') == 'True':
+            self.endpoint = DEFAULT_DATA_ACCELERATION_ENDPOINT
+        else:
+            self.endpoint = f"https://{oss_config['Region']}.aliyuncs.com"
         self.bucket_name = oss_config[BUCKET]
         auth = oss2.StsAuth(self.key, self.secret, self.token)
-        self.bucket = oss2.Bucket(auth, self.endpoint, self.bucket_name)
+        self.bucket = oss2.Bucket(
+            auth, self.endpoint, self.bucket_name, connect_timeout=120)
         self.oss_dir = oss_config[DIR]
         self.oss_backup_dir = oss_config[BACK_DIR]
 
     def _reload_sts(self):
-        cookies = self.api.check_local_cookies(use_cookies=True)
+        logger.info('Reloading sts token automatically.')
         oss_config_refresh = self.api.get_dataset_access_config_session(
-            cookies=cookies,
             dataset_name=self.dataset_name,
             namespace=self.namespace,
+            check_cookie=True,
             revision=self.revision)
         self._do_init(oss_config_refresh)
 
@@ -63,22 +76,51 @@ class OssUtilities:
             rate = int(100 * (float(consumed_bytes) / float(total_bytes)))
             print('\r{0}% '.format(rate), end='', flush=True)
 
-    def download(self, oss_file_name, download_config):
+    def download(self, oss_file_name: str,
+                 download_config: DataDownloadConfig):
         cache_dir = download_config.cache_dir
         candidate_key = os.path.join(self.oss_dir, oss_file_name)
         candidate_key_backup = os.path.join(self.oss_backup_dir, oss_file_name)
-        file_oss_key = candidate_key if self.bucket.object_exists(
-            candidate_key) else candidate_key_backup
-        filename = hash_url_to_filename(file_oss_key, etag=None)
-        local_path = os.path.join(cache_dir, filename)
+        split = download_config.split
 
-        if download_config.force_download or not os.path.exists(local_path):
-            oss2.resumable_download(
-                self.bucket,
-                file_oss_key,
-                local_path,
-                multiget_threshold=0,
-                progress_callback=self._percentage)
+        big_data = False
+        if split:
+            args_dict = download_config.meta_args_map.get(split)
+            if args_dict:
+                big_data = args_dict.get(MetaDataFields.ARGS_BIG_DATA)
+
+        retry_count = 0
+        while True:
+            try:
+                retry_count += 1
+                # big_data is True when the dataset contains large number of objects
+                if big_data:
+                    file_oss_key = candidate_key
+                else:
+                    file_oss_key = candidate_key if self.bucket.object_exists(
+                        candidate_key) else candidate_key_backup
+                filename = hash_url_to_filename(file_oss_key, etag=None)
+                local_path = os.path.join(cache_dir, filename)
+
+                if download_config.force_download or not os.path.exists(
+                        local_path):
+                    oss2.resumable_download(
+                        self.bucket,
+                        file_oss_key,
+                        local_path,
+                        store=self.resumable_store_download,
+                        multiget_threshold=self.multipart_threshold,
+                        part_size=self.part_size,
+                        progress_callback=self._percentage,
+                        num_threads=self.num_threads)
+                break
+            except Exception as e:
+                if e.__dict__.get('status') == 403:
+                    self._reload_sts()
+                if retry_count >= self.max_retries:
+                    logger.warning(f'Failed to download {oss_file_name}')
+                    raise e
+
         return local_path
 
     def upload(self, oss_object_name: str, local_file_path: str,
@@ -86,8 +128,7 @@ class OssUtilities:
                upload_mode: UploadMode) -> str:
         retry_count = 0
         object_key = os.path.join(self.oss_dir, oss_object_name)
-        resumable_store = oss2.ResumableStore(
-            root=self.upload_resumable_tmp_store)
+
         if indicate_individual_progress:
             progress_callback = self._percentage
         else:
@@ -107,16 +148,16 @@ class OssUtilities:
                     self.bucket,
                     object_key,
                     local_file_path,
-                    store=resumable_store,
-                    multipart_threshold=self.upload_multipart_threshold,
-                    part_size=self.upload_part_size,
+                    store=self.resumable_store_upload,
+                    multipart_threshold=self.multipart_threshold,
+                    part_size=self.part_size,
                     progress_callback=progress_callback,
-                    num_threads=self.upload_num_threads)
+                    num_threads=self.num_threads)
                 break
             except Exception as e:
-                if e.__getattribute__('status') == 403:
+                if e.__dict__.get('status') == 403:
                     self._reload_sts()
-                if retry_count >= self.upload_max_retries:
+                if retry_count >= self.max_retries:
                     raise
 
         return object_key

@@ -9,6 +9,7 @@ from modelscope.metainfo import Trainers
 from modelscope.msdatasets import MsDataset
 from modelscope.trainers import build_trainer
 from modelscope.utils.constant import DownloadMode, ModelFile
+from modelscope.utils.hub import read_config
 from modelscope.utils.test_utils import test_level
 
 
@@ -36,7 +37,7 @@ class TestOfaTrainer(unittest.TestCase):
              'train': {'work_dir': 'work/ckpts/recognition',
                        # 'launcher': 'pytorch',
                        'max_epochs': 1,
-                       'use_fp16': True,
+                       'use_fp16': False,
                        'dataloader': {'batch_size_per_gpu': 4, 'workers_per_gpu': 0},
                        'lr_scheduler': {'name': 'polynomial_decay',
                                         'warmup_proportion': 0.01,
@@ -68,19 +69,24 @@ class TestOfaTrainer(unittest.TestCase):
              'evaluation': {'dataloader': {'batch_size_per_gpu': 4, 'workers_per_gpu': 0},
                             'metrics': [{'type': 'accuracy'}]},
              'preprocessor': []}
+        self.WORKSPACE = './workspace/ckpts/recognition'
+
+    def tearDown(self) -> None:
+        if os.path.exists(self.WORKSPACE):
+            shutil.rmtree(self.WORKSPACE, ignore_errors=True)
+        super().tearDown()
 
     @unittest.skipUnless(test_level() >= 0, 'skip test in current test level')
     def test_trainer_std(self):
-        WORKSPACE = './workspace/ckpts/recognition'
-        os.makedirs(WORKSPACE, exist_ok=True)
-        config_file = os.path.join(WORKSPACE, ModelFile.CONFIGURATION)
+        os.makedirs(self.WORKSPACE, exist_ok=True)
+        config_file = os.path.join(self.WORKSPACE, ModelFile.CONFIGURATION)
         with open(config_file, 'w') as writer:
-            json.dump(self.finetune_cfg, writer)
-
+            json.dump(self.finetune_cfg, writer, indent=4)
         pretrained_model = 'damo/ofa_ocr-recognition_scene_base_zh'
+
         args = dict(
             model=pretrained_model,
-            work_dir=WORKSPACE,
+            work_dir=self.WORKSPACE,
             train_dataset=MsDataset.load(
                 'ocr_fudanvi_zh',
                 subset_name='scene',
@@ -99,8 +105,8 @@ class TestOfaTrainer(unittest.TestCase):
 
         self.assertIn(
             ModelFile.TORCH_MODEL_BIN_FILE,
-            os.listdir(os.path.join(WORKSPACE, ModelFile.TRAIN_OUTPUT_DIR)))
-        shutil.rmtree(WORKSPACE)
+            os.listdir(
+                os.path.join(self.WORKSPACE, ModelFile.TRAIN_OUTPUT_DIR)))
 
 
 if __name__ == '__main__':

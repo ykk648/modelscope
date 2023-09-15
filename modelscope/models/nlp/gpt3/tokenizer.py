@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import List
+
 from tokenizers import Tokenizer
 
 
@@ -25,10 +27,12 @@ class JiebaBPETokenizer:
         self.eod_id = self.tokenizer.token_to_id('<|endoftext|>')
         try:
             import jieba
+            import logging
+            jieba.setLogLevel(logging.INFO)
         except ImportError:
             raise ImportError(
-                'You need to install rjieba to use JiebaTokenizer. '
-                'See https://pypi.org/project/rjieba/ for installation.')
+                'You need to install jieba to use JiebaTokenizer. '
+                'See https://pypi.org/project/jieba/ for installation.')
         self.jieba = jieba
         self.new_line = self.vocab['\n']
         self.sep_token = self.vocab['<sep>']
@@ -49,7 +53,7 @@ class JiebaBPETokenizer:
             inv_vocab[val] = key
         return inv_vocab
 
-    def tokenize(self, text, is_code=False):
+    def tokenize(self, text: str, is_code: bool = False) -> List[int]:
         """
         """
         if not is_code:
@@ -60,8 +64,10 @@ class JiebaBPETokenizer:
             return self.tokenizer.encode(
                 text, is_pretokenized=False, add_special_tokens=True).ids
 
-    def detokenize(self, token_ids):
-        text = self.tokenizer.decode(token_ids, skip_special_tokens=False)
+    def detokenize(self, token_ids: List[int], early_stop: bool = True) -> str:
+        if early_stop and self.sep_token in token_ids:
+            token_ids = token_ids[:token_ids.index(self.sep_token)]
+        text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
         return text
 
     @property

@@ -22,7 +22,7 @@ from transformers.onnx import OnnxConfig
 
 from modelscope.utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 class BertConfig(PretrainedConfig):
@@ -93,7 +93,7 @@ class BertConfig(PretrainedConfig):
 
     Examples:
 
-    ```python >>> from transformers import BertModel, BertConfig
+    >>> from transformers import BertModel, BertConfig
 
     >>> # Initializing a BERT bert-base-uncased style configuration
     >>> configuration = BertConfig()
@@ -103,7 +103,7 @@ class BertConfig(PretrainedConfig):
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
-    ```"""
+    """
     model_type = 'bert'
 
     def __init__(self,

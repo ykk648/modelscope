@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 import cv2
 import numpy as np
+import tensorflow as tf
 
 from modelscope.metainfo import Pipelines
 from modelscope.outputs import OutputKeys
@@ -14,11 +15,16 @@ from modelscope.utils.constant import ModelFile, Tasks
 from modelscope.utils.device import device_placement
 from modelscope.utils.logger import get_logger
 
+if tf.__version__ >= '2.0':
+    tf = tf.compat.v1
+
 logger = get_logger()
 
 
 @PIPELINES.register_module(
     Tasks.portrait_matting, module_name=Pipelines.portrait_matting)
+@PIPELINES.register_module(
+    Tasks.universal_matting, module_name=Pipelines.universal_matting)
 class ImageMattingPipeline(Pipeline):
 
     def __init__(self, model: str, **kwargs):
@@ -28,9 +34,6 @@ class ImageMattingPipeline(Pipeline):
             model: model id on modelscope hub.
         """
         super().__init__(model=model, **kwargs)
-        import tensorflow as tf
-        if tf.__version__ >= '2.0':
-            tf = tf.compat.v1
         model_path = osp.join(self.model, ModelFile.TF_GRAPH_FILE)
 
         with device_placement(self.framework, self.device_name):
@@ -50,7 +53,7 @@ class ImageMattingPipeline(Pipeline):
 
     def preprocess(self, input: Input) -> Dict[str, Any]:
         img = LoadImage.convert_to_ndarray(input)
-        img = img.astype(np.float)
+        img = img.astype(float)
         result = {'img': img}
         return result
 

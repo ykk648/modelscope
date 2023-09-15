@@ -44,6 +44,17 @@ class ImageDenoiseMetric(Metric):
             MetricKeys.SSIM: np.mean(ssim_list)
         }
 
+    def merge(self, other: 'ImageDenoiseMetric'):
+        self.preds.extend(other.preds)
+        self.labels.extend(other.labels)
+
+    def __getstate__(self):
+        return self.preds, self.labels
+
+    def __setstate__(self, state):
+        self.__init__()
+        self.preds, self.labels = state
+
 
 def reorder_image(img, input_order='HWC'):
     """Reorder images to 'HWC' order.
@@ -86,7 +97,7 @@ def calculate_psnr(img1, img2, crop_border, input_order='HWC'):
     """
 
     assert img1.shape == img2.shape, (
-        f'Image shapes are differnet: {img1.shape}, {img2.shape}.')
+        f'Image shapes are different: {img1.shape}, {img2.shape}.')
     if input_order not in ['HWC', 'CHW']:
         raise ValueError(
             f'Wrong input_order {input_order}. Supported input_orders are '
@@ -141,7 +152,7 @@ def calculate_ssim(img1, img2, crop_border, input_order='HWC', ssim3d=True):
     """
 
     assert img1.shape == img2.shape, (
-        f'Image shapes are differnet: {img1.shape}, {img2.shape}.')
+        f'Image shapes are different: {img1.shape}, {img2.shape}.')
     if input_order not in ['HWC', 'CHW']:
         raise ValueError(
             f'Wrong input_order {input_order}. Supported input_orders are '

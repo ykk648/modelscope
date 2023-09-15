@@ -2,14 +2,15 @@
 
 import os
 from collections import defaultdict
-from typing import Any, Mapping, Optional, Sequence, Union
+from typing import Optional, Union
 
-from datasets.builder import DatasetBuilder
+import pandas as pd
 
 from modelscope.hub.api import HubApi
-from modelscope.utils.constant import DEFAULT_DATASET_REVISION
+from modelscope.msdatasets.context.dataset_context_config import \
+    DatasetContextConfig
+from modelscope.utils.constant import DEFAULT_DATASET_REVISION, MetaDataFields
 from modelscope.utils.logger import get_logger
-from .dataset_builder import MsCsvDatasetBuilder, TaskSpecificDatasetBuilder
 
 logger = get_logger()
 
@@ -105,6 +106,8 @@ def list_dataset_objects(hub_api: HubApi, max_limit: int, is_recursive: bool,
 
     for item in objects:
         object_key = item.get('Key')
+        if not object_key:
+            continue
         res.append(object_key)
 
     return res
@@ -127,6 +130,22 @@ def contains_dir(file_map) -> bool:
     return res
 
 
+def get_subdir_hash_from_split(split: Union[str, list], version: str) -> str:
+    if isinstance(split, str):
+        split = [split]
+    return os.path.join(version, '_'.join(split))
+
+
+def get_split_list(split: Union[str, list]) -> list:
+    """ Unify the split to list-format. """
+    if isinstance(split, str):
+        return [split]
+    elif isinstance(split, list):
+        return split
+    else:
+        raise f'Expected format of split: str or list, but got {type(split)}.'
+
+
 def get_split_objects_map(file_map, objects):
     """
     Get the map between dataset split and oss objects.
@@ -145,7 +164,7 @@ def get_split_objects_map(file_map, objects):
 
     for obj_key in objects:
         for k, v in file_map.items():
-            if obj_key.startswith(v):
+            if obj_key.startswith(v.rstrip('/') + '/'):
                 res[k].append(obj_key)
 
     return res
@@ -154,6 +173,7 @@ def get_split_objects_map(file_map, objects):
 def get_dataset_files(subset_split_into: dict,
                       dataset_name: str,
                       namespace: str,
+                      context_config: DatasetContextConfig,
                       revision: Optional[str] = DEFAULT_DATASET_REVISION):
     """
     Return:
@@ -169,63 +189,51 @@ def get_dataset_files(subset_split_into: dict,
     meta_map = defaultdict(dict)
     file_map = defaultdict(dict)
     args_map = defaultdict(dict)
+    custom_type_map = defaultdict(dict)
     modelscope_api = HubApi()
-    objects = list_dataset_objects(
-        hub_api=modelscope_api,
-        max_limit=-1,
-        is_recursive=True,
-        dataset_name=dataset_name,
-        namespace=namespace,
-        version=revision)
+    meta_cache_dir = context_config.data_meta_config.meta_cache_dir
 
     for split, info in subset_split_into.items():
+        custom_type_map[split] = info.get('custom', '')
         meta_map[split] = modelscope_api.get_dataset_file_url(
             info.get('meta', ''), dataset_name, namespace, revision)
         if info.get('file'):
             file_map[split] = info['file']
         args_map[split] = info.get('args')
 
-    if contains_dir(file_map):
-        file_map = get_split_objects_map(file_map, objects)
-    return meta_map, file_map, args_map
+    objects = []
+    # If `big_data` is true, then fetch objects from meta-csv file directly.
+    for split, args_dict in args_map.items():
+        if args_dict and args_dict.get(MetaDataFields.ARGS_BIG_DATA):
+            meta_csv_file_url = meta_map[split]
 
+            meta_csv_file_path = HubApi.fetch_meta_files_from_url(
+                meta_csv_file_url, meta_cache_dir)
 
-def load_dataset_builder(dataset_name: str, subset_name: str, namespace: str,
-                         meta_data_files: Mapping[str, Union[str,
-                                                             Sequence[str]]],
-                         zip_data_files: Mapping[str, Union[str,
-                                                            Sequence[str]]],
-                         args_map: Mapping[str, Any], cache_dir: str,
-                         version: Optional[Union[str]], split: Sequence[str],
-                         **config_kwargs) -> DatasetBuilder:
-    sub_dir = os.path.join(version, '_'.join(split))
-    meta_data_file = next(iter(meta_data_files.values()))
-    if not meta_data_file:
-        args_map = next(iter(args_map.values()))
-        if args_map is None:
-            args_map = {}
-        args_map.update(config_kwargs)
-        builder_instance = TaskSpecificDatasetBuilder(
+            csv_delimiter = context_config.config_kwargs.get('delimiter', ',')
+            csv_df = pd.read_csv(
+                meta_csv_file_path, iterator=False, delimiter=csv_delimiter)
+            target_col = csv_df.columns[csv_df.columns.str.contains(
+                ':FILE')].to_list()
+            if len(target_col) == 0:
+                logger.error(
+                    f'No column contains ":FILE" in {meta_csv_file_path}.')
+                target_col = csv_df.columns[0]
+            else:
+                target_col = target_col[0]
+            objects = csv_df[target_col].to_list()
+
+            file_map[split] = objects
+    # More general but low-efficiency.
+    if not objects:
+        objects = list_dataset_objects(
+            hub_api=modelscope_api,
+            max_limit=-1,
+            is_recursive=True,
             dataset_name=dataset_name,
             namespace=namespace,
-            cache_dir=cache_dir,
-            subset_name=subset_name,
-            meta_data_files=meta_data_files,
-            zip_data_files=zip_data_files,
-            hash=sub_dir,
-            **args_map)
-    elif meta_data_file.endswith('.csv'):
-        builder_instance = MsCsvDatasetBuilder(
-            dataset_name=dataset_name,
-            namespace=namespace,
-            cache_dir=cache_dir,
-            subset_name=subset_name,
-            meta_data_files=meta_data_files,
-            zip_data_files=zip_data_files,
-            hash=sub_dir)
-    else:
-        raise NotImplementedError(
-            f'Dataset mete file extensions "{os.path.splitext(meta_data_file)[-1]}" is not implemented yet'
-        )
+            version=revision)
+        if contains_dir(file_map):
+            file_map = get_split_objects_map(file_map, objects)
 
-    return builder_instance
+    return meta_map, file_map, args_map, custom_type_map

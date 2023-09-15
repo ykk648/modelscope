@@ -16,8 +16,9 @@ from modelscope.hub.git import GitCommandWrapper
 from modelscope.hub.repository import Repository
 from modelscope.utils.constant import ModelFile
 from modelscope.utils.logger import get_logger
-from .test_utils import (TEST_ACCESS_TOKEN1, TEST_MODEL_CHINESE_NAME,
-                         TEST_MODEL_ORG, delete_credential)
+from modelscope.utils.test_utils import (TEST_ACCESS_TOKEN1,
+                                         TEST_MODEL_CHINESE_NAME,
+                                         TEST_MODEL_ORG, delete_credential)
 
 logger = get_logger()
 logger.setLevel('DEBUG')
@@ -78,6 +79,20 @@ class HubRepositoryTest(unittest.TestCase):
         lfs_files = git_wrapper.list_lfs_files(self.model_dir)
         assert lfs_file1 in lfs_files
         assert lfs_file2 in lfs_files
+
+    def test_add_lfs_file_type(self):
+        repo = Repository(self.model_dir, clone_from=self.model_id)
+        assert os.path.exists(os.path.join(self.model_dir, ModelFile.README))
+        os.chdir(self.model_dir)
+        lfs_file = 'test.safetensors'
+        os.system("echo 'safttensor'>%s"
+                  % os.path.join(self.model_dir, lfs_file))
+        repo.add_lfs_type('*.safetensors')
+        repo.push('test')
+        # check lfs files.
+        git_wrapper = GitCommandWrapper()
+        lfs_files = git_wrapper.list_lfs_files(self.model_dir)
+        assert lfs_file in lfs_files
 
 
 if __name__ == '__main__':

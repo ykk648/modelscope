@@ -19,7 +19,7 @@ from transformers.configuration_utils import PretrainedConfig
 
 from modelscope.utils import logger as logging
 
-logger = logging.get_logger(__name__)
+logger = logging.get_logger()
 
 
 class PalmConfig(PretrainedConfig):
@@ -63,7 +63,7 @@ class PalmConfig(PretrainedConfig):
         attn_separate (:obj:`bool`, `optional`, defaults to false):
             Whether or not to separate the q, k, v of attention.
 
-    Examples::
+    Examples:
 
         >>> from modelscope.models.nlp.palm_v2 import PalmForConditionalGeneration, PalmConfig
         >>> configuration = PalmConfig()

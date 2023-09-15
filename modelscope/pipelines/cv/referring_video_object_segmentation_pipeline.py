@@ -1,7 +1,8 @@
 # The implementation here is modified based on MTTR,
-# originally Apache 2.0 License and publicly avaialbe at https://github.com/mttr2021/MTTR
+# originally Apache 2.0 License and publicly available at https://github.com/mttr2021/MTTR
 # Copyright (c) Alibaba, Inc. and its affiliates.
 
+import tempfile
 from typing import Any, Dict
 
 import numpy as np
@@ -33,6 +34,7 @@ class ReferringVideoObjectSegmentationPipeline(Pipeline):
 
         Args:
             model: model id on modelscope hub
+            render: whether to generate output video for demo service, default: False
         """
         _device = kwargs.pop('device', 'gpu')
         if torch.cuda.is_available() and _device == 'gpu':
@@ -52,17 +54,17 @@ class ReferringVideoObjectSegmentationPipeline(Pipeline):
         """
         assert isinstance(input, tuple) and len(
             input
-        ) == 4, 'error - input type must be tuple and input length must be 4'
-        self.input_video_pth, text_queries, start_pt, end_pt = input
+        ) == 2, 'error - input type must be tuple and input length must be 2'
+        self.input_video_pth, text_queries = input
 
-        assert 0 < end_pt - start_pt <= 10, 'error - the subclip length must be 0-10 seconds long'
         assert 1 <= len(
             text_queries) <= 2, 'error - 1-2 input text queries are expected'
 
         # extract the relevant subclip:
         self.input_clip_pth = 'input_clip.mp4'
+
         with VideoFileClip(self.input_video_pth) as video:
-            subclip = video.subclip(start_pt, end_pt)
+            subclip = video.subclip()
             subclip.write_videofile(self.input_clip_pth)
 
         self.window_length = 24  # length of window during inference
@@ -123,7 +125,11 @@ class ReferringVideoObjectSegmentationPipeline(Pipeline):
                 pred_masks_per_query.append(pred_masks)
         return pred_masks_per_query
 
-    def postprocess(self, inputs) -> Dict[str, Any]:
+    def postprocess(self, inputs, **kwargs) -> Dict[str, Any]:
+        output_clip_path = None
+        render = kwargs.get('render', False)
+        if render:
+            self.model.cfg.pipeline.save_masked_video = True
         if self.model.cfg.pipeline.save_masked_video:
             # RGB colors for instance masks:
             light_blue = (41, 171, 226)
@@ -137,6 +143,19 @@ class ReferringVideoObjectSegmentationPipeline(Pipeline):
 
             video_np = rearrange(self.video,
                                  't c h w -> t h w c').numpy() / 255.0
+
+            # set font for text query in output video
+            if self.model.cfg.pipeline.output_font:
+                try:
+                    font = ImageFont.truetype(
+                        font=self.model.cfg.pipeline.output_font,
+                        size=self.model.cfg.pipeline.output_font_size)
+                except OSError:
+                    logger.error('can\'t open resource %s, load default font'
+                                 % self.model.cfg.pipeline.output_font)
+                    font = ImageFont.load_default()
+            else:
+                font = ImageFont.load_default()
 
             # del video
             pred_masks_per_frame = rearrange(
@@ -158,42 +177,61 @@ class ReferringVideoObjectSegmentationPipeline(Pipeline):
                 W, H = vid_frame.size
                 draw = ImageDraw.Draw(vid_frame)
 
-                if self.model.cfg.pipeline.output_font:
-                    font = ImageFont.truetype(
-                        font=self.model.cfg.pipeline.output_font,
-                        size=self.model.cfg.pipeline.output_font_size)
-                else:
-                    font = ImageFont.load_default()
                 for i, (text_query, color) in enumerate(
                         zip(self.text_queries, colors), start=1):
-                    w, h = draw.textsize(text_query, font=font)
+                    _, _, w, h = draw.textbbox([0, 0], text_query, font=font)
                     draw.text(((W - w) / 2,
                                (text_border_height_per_query * i) - h - 3),
                               text_query,
                               fill=tuple(color) + (255, ),
                               font=font)
                 masked_video.append(np.array(vid_frame))
-            print(type(vid_frame))
-            print(type(masked_video[0]))
-            print(masked_video[0].shape)
             # generate and save the output clip:
 
-            assert self.model.cfg.pipeline.output_path
-            output_clip_path = self.model.cfg.pipeline.output_path
+            output_clip_path = self.model.cfg.pipeline.get(
+                'output_path',
+                tempfile.NamedTemporaryFile(suffix='.mp4').name)
             clip = ImageSequenceClip(
                 sequence=masked_video, fps=self.meta['video_fps'])
-            clip = clip.set_audio(AudioFileClip(self.input_clip_pth))
+
+            audio_flag = True
+            try:
+                audio = AudioFileClip(self.input_clip_pth)
+            except KeyError as e:
+                logger.error(f'key error: {e}!')
+                audio_flag = False
+
+            if audio_flag:
+                clip = clip.set_audio(audio)
             clip.write_videofile(
-                output_clip_path, fps=self.meta['video_fps'], audio=True)
+                output_clip_path, fps=self.meta['video_fps'], audio=audio_flag)
             del masked_video
 
-        result = {OutputKeys.MASKS: inputs}
+        masks = [mask.squeeze(1).cpu().numpy() for mask in inputs]
+
+        fps = self.meta['video_fps']
+        output_timestamps = []
+        for frame_idx in range(self.video.shape[0]):
+            output_timestamps.append(timestamp_format(seconds=frame_idx / fps))
+        result = {
+            OutputKeys.MASKS: None if render else masks,
+            OutputKeys.TIMESTAMPS: None if render else output_timestamps,
+            OutputKeys.OUTPUT_VIDEO: output_clip_path
+        }
+
         return result
 
 
 def apply_mask(image, mask, color, transparency=0.7):
     mask = mask[..., np.newaxis].repeat(repeats=3, axis=2)
     mask = mask * transparency
-    color_matrix = np.ones(image.shape, dtype=np.float) * color
+    color_matrix = np.ones(image.shape, dtype=np.float64) * color
     out_image = color_matrix * mask + image * (1.0 - mask)
     return out_image
+
+
+def timestamp_format(seconds):
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    time = '%02d:%02d:%06.3f' % (h, m, s)
+    return time

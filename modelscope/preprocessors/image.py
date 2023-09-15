@@ -24,10 +24,12 @@ class LoadImage:
     "scale_factor" (1.0) and "img_norm_cfg" (means=0 and stds=1).
     Args:
         mode (str): See :ref:`PIL.Mode<https://pillow.readthedocs.io/en/stable/handbook/concepts.html#modes>`.
+        backend (str): Type of loading image. Should be: cv2 or pillow. Default is pillow.
     """
 
-    def __init__(self, mode='rgb'):
+    def __init__(self, mode='rgb', backend='pillow'):
         self.mode = mode.upper()
+        self.backend = backend
 
     def __call__(self, input: Union[str, Dict[str, str]]):
         """Call functions to load image and get image meta information.
@@ -42,21 +44,38 @@ class LoadImage:
         else:
             image_path_or_url = input
 
-        bytes = File.read(image_path_or_url)
-        # TODO @wenmeng.zwm add opencv decode as optional
-        # we should also look at the input format which is the most commonly
-        # used in Mind' image related models
-        with io.BytesIO(bytes) as infile:
-            img = Image.open(infile)
-            img = ImageOps.exif_transpose(img)
-            img = img.convert(self.mode)
+        if self.backend == 'cv2':
+            storage = File._get_storage(image_path_or_url)
+            with storage.as_local_path(image_path_or_url) as img_path:
+                img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+                if self.mode == 'RGB':
+                    cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)
+                img_h, img_w, img_c = img.shape[0], img.shape[1], img.shape[2]
+                img_shape = (img_h, img_w, img_c)
+        elif self.backend == 'pillow':
+            bytes = File.read(image_path_or_url)
+            # TODO @wenmeng.zwm add opencv decode as optional
+            # we should also look at the input format which is the most commonly
+            # used in Mind' image related models
+            with io.BytesIO(bytes) as infile:
+                img = Image.open(infile)
+                img = ImageOps.exif_transpose(img)
+                img = img.convert(self.mode)
+            img_shape = (img.size[1], img.size[0], 3)
+        else:
+            raise TypeError(f'backend should be either cv2 or pillow,'
+                            f'but got {self.backend}')
 
         results = {
             'filename': image_path_or_url,
             'img': img,
-            'img_shape': (img.size[1], img.size[0], 3),
+            'img_shape': img_shape,
             'img_field': 'img',
         }
+        if isinstance(input, dict):
+            input_ret = input.copy()
+            input_ret.update(results)
+            results = input_ret
         return results
 
     def __repr__(self):
@@ -106,6 +125,55 @@ def load_image(image_path_or_url: str) -> Image.Image:
 
 
 @PREPROCESSORS.register_module(
+    Fields.cv, module_name=Preprocessors.object_detection_tinynas_preprocessor)
+class ObjectDetectionTinynasPreprocessor(Preprocessor):
+
+    def __init__(self, size_divisible=32, **kwargs):
+        """Preprocess the image.
+
+        What this preprocessor will do:
+        1. Transpose the image matrix to make the channel the first dim.
+        2. If the size_divisible is gt than 0, it will be used to pad the image.
+        3. Expand an extra image dim as dim 0.
+
+        Args:
+            size_divisible (int): The number will be used as a length unit to pad the image.
+                Formula: int(math.ceil(shape / size_divisible) * size_divisible)
+                Default 32.
+        """
+
+        super().__init__(**kwargs)
+        self.size_divisible = size_divisible
+
+    @type_assert(object, object)
+    def __call__(self, data: np.ndarray) -> Dict[str, ndarray]:
+        """Preprocess the image.
+
+        Args:
+            data: The input image with 3 dimensions.
+
+        Returns:
+            The processed data in dict.
+            {'img': np.ndarray}
+
+        """
+        image = data.astype(np.float32)
+        image = image.transpose((2, 0, 1))
+        shape = image.shape  # c, h, w
+        if self.size_divisible > 0:
+            import math
+            stride = self.size_divisible
+            shape = list(shape)
+            shape[1] = int(math.ceil(shape[1] / stride) * stride)
+            shape[2] = int(math.ceil(shape[2] / stride) * stride)
+            shape = tuple(shape)
+        pad_img = np.zeros(shape).astype(np.float32)
+        pad_img[:, :image.shape[1], :image.shape[2]] = image
+        pad_img = np.expand_dims(pad_img, 0)
+        return {'img': pad_img}
+
+
+@PREPROCESSORS.register_module(
     Fields.cv, module_name=Preprocessors.image_color_enhance_preprocessor)
 class ImageColorEnhanceFinetunePreprocessor(Preprocessor):
 
@@ -139,8 +207,41 @@ class ImageColorEnhanceFinetunePreprocessor(Preprocessor):
 
 
 @PREPROCESSORS.register_module(
-    Fields.cv, module_name=Preprocessors.image_denoie_preprocessor)
+    Fields.cv, module_name=Preprocessors.image_denoise_preprocessor)
 class ImageDenoisePreprocessor(Preprocessor):
+
+    def __init__(self, model_dir: str, *args, **kwargs):
+        """
+
+        Args:
+            model_dir (str): model path
+        """
+        super().__init__(*args, **kwargs)
+        self.model_dir: str = model_dir
+
+        from .common import Filter
+
+        # TODO: `Filter` should be moved to configurarion file of each model
+        self._transforms = [Filter(reserved_keys=['input', 'target'])]
+
+    def __call__(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """process the raw input data
+
+        Args:
+            data Dict[str, Any]
+
+        Returns:
+            Dict[str, Any]: the preprocessed data
+        """
+        for t in self._transforms:
+            data = t(data)
+
+        return data
+
+
+@PREPROCESSORS.register_module(
+    Fields.cv, module_name=Preprocessors.image_deblur_preprocessor)
+class ImageDeblurPreprocessor(Preprocessor):
 
     def __init__(self, model_dir: str, *args, **kwargs):
         """
@@ -289,3 +390,37 @@ class VideoSummarizationPreprocessor(Preprocessor):
             Dict[str, Any]: the preprocessed data
         """
         return data
+
+
+@PREPROCESSORS.register_module(
+    Fields.cv,
+    module_name=Preprocessors.image_classification_bypass_preprocessor)
+class ImageClassificationBypassPreprocessor(Preprocessor):
+
+    def __init__(self, *args, **kwargs):
+        """image classification bypass preprocessor in the fine-tune scenario
+        """
+        super().__init__(*args, **kwargs)
+
+        self.training = kwargs.pop('training', True)
+        self.preprocessor_train_cfg = kwargs.pop('train', None)
+        self.preprocessor_val_cfg = kwargs.pop('val', None)
+
+    def train(self):
+        self.training = True
+        return
+
+    def eval(self):
+        self.training = False
+        return
+
+    def __call__(self, results: Dict[str, Any]):
+        """process the raw input data
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            Dict[str, Any] | None: the preprocessed data
+        """
+        pass
